@@ -9,10 +9,7 @@ from typing import Optional
 import click
 from .config import Config
 from .models import ServiceType
-from .orchestrator import AgenticOrchestrator
-
-# Alias for backward compatibility
-SpecOrchestrator = AgenticOrchestrator
+from .workflow import SpecificationWorkflow
 
 
 @click.group()
@@ -32,9 +29,6 @@ def cli(ctx):
         config = Config.from_env()
         config.validate()
         ctx.obj["config"] = config
-        print(ctx)
-        print(dir(ctx))
-        print(dict(ctx.obj["config"]))
     except Exception as e:
         click.echo(f"❌ Configuration error: {e}", err=True)
         sys.exit(1)
@@ -59,11 +53,6 @@ def cli(ctx):
 @click.option(
     "--no-git", is_flag=True, help="Skip git workflow (branch creation and commit)"
 )
-@click.option(
-    "--agentic",
-    is_flag=True,
-    help="Enable full iterative refinement with quality optimization",
-)
 @click.pass_context
 def generate(
     ctx,
@@ -72,14 +61,12 @@ def generate(
     output_dir: Optional[Path],
     no_validate: bool,
     no_git: bool,
-    agentic: bool,
 ):
     """
-    최적화된 Agentic Loop를 사용하여 FRS 파일로부터 명세서 문서를 생성합니다.
+    FRS 파일로부터 명세서 문서를 생성합니다.
 
     예제:
         spec_agent generate specs/FRS-1.md --service-type api
-        spec_agent generate specs/FRS-1.md --service-type api --agentic  (전체 최적화)
         spec_agent generate specs/FRS-2.md --service-type web --output-dir custom/output
     """
     config = ctx.obj["config"]
@@ -96,17 +83,9 @@ def generate(
         click.echo(f"❌ Invalid service type: {service_type}", err=True)
         sys.exit(1)
 
-    # Initialize orchestrator (always Agentic now, but with different settings)
-    orchestrator = AgenticOrchestrator(config)
-
-    if agentic:
-        click.echo(f"🔄 Using Agentic Loop with full iterative refinement")
-        # Use full Agentic features
-    else:
-        click.echo(f"🚀 Using Agentic Loop with simplified mode")
-        # Disable some Agentic features for faster execution
-        config.early_stopping = False
-        config.max_iterations = 1  # Single pass like traditional
+    # Strands Agent SDK 워크플로우 사용
+    click.echo(f"🌟 Using Strands Agent SDK native workflow patterns")
+    workflow = SpecificationWorkflow(config)
 
     # Run generation
     click.echo(f"🚀 Starting specification generation...")
@@ -114,14 +93,14 @@ def generate(
     click.echo(f"🔧 Service Type: {service_enum.value}")
 
     try:
-        # Run generation (always use Agentic Loop now)
         import asyncio
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
+            # Strands 네이티브 워크플로우 실행
             result = loop.run_until_complete(
-                orchestrator.generate_specs_with_loop(
+                workflow.execute_workflow(
                     frs_path=str(frs_path),
                     service_type=service_enum,
                     output_dir=str(output_dir) if output_dir else None,
@@ -139,8 +118,36 @@ def generate(
             for file_path in result["files_written"]:
                 click.echo(f"  ✅ {Path(file_path).name}")
 
-            # Show quality metrics
-            if result.get("quality_report"):
+            # Show execution metrics
+            if result.get("quality_results"):
+                # Strands 워크플로우 메트릭
+                click.echo(f"\n📊 Strands Workflow Metrics:")
+                click.echo(f"  • Framework: {result.get('framework', 'Strands Agent SDK')}")
+                click.echo(f"  • Pattern: {result.get('pattern', 'Agent-to-Agent')}")
+                
+                if 'execution_time' in result:
+                    click.echo(f"  • Execution Time: {result['execution_time']:.1f}s")
+                
+                # 품질 결과 표시
+                quality_results = result["quality_results"]
+                avg_quality = sum(r.get('overall', 0) for r in quality_results.values()) / len(quality_results)
+                click.echo(f"  • Average Quality: {avg_quality:.1f}%")
+                
+                click.echo(f"\n📈 Document Quality Scores:")
+                for doc_type, scores in quality_results.items():
+                    overall = scores.get("overall", 0)
+                    status = "✅" if overall >= 70 else "⚠️" if overall >= 50 else "❌"
+                    click.echo(f"  {status} {doc_type}: {overall:.1f}%")
+                    
+                # 일관성 결과 표시
+                if result.get("consistency_results"):
+                    consistency = result["consistency_results"]
+                    total_issues = sum(len(issues) for issues in consistency.values())
+                    click.echo(f"\n🔍 Consistency Check:")
+                    click.echo(f"  • Total Issues: {total_issues}")
+                    
+            elif result.get("quality_report"):
+                # 레거시 메트릭 (하위 호환성)
                 report = result["quality_report"]
                 click.echo(f"\n📊 Performance Metrics:")
                 click.echo(
@@ -212,14 +219,14 @@ def validate(ctx, spec_dir: Path):
         click.echo(f"❌ Not a directory: {spec_dir}", err=True)
         sys.exit(1)
 
-    # Initialize orchestrator
-    orchestrator = SpecOrchestrator(config)
+    # Initialize Strands workflow
+    workflow = SpecificationWorkflow(config)
 
     click.echo(f"🔍 Validating specifications in: {spec_dir}")
 
     try:
-        # Run validation
-        result = orchestrator.validate_specs(str(spec_dir))
+        # Run validation using Strands workflow
+        result = workflow.validate_existing_specs(str(spec_dir))
 
         if result["success"]:
             click.echo(f"\n✅ Validation completed!")
