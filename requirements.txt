@@ -1,0 +1,9 @@
+strands-agents[a2a,openai]
+strands-agents-tools
+openai
+pydantic
+markdown
+click
+python-dotenv
+jsonschema
+aiofiles
