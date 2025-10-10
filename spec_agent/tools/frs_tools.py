@@ -4,7 +4,16 @@ import re
 from pathlib import Path
 from typing import Dict, Any
 from strands import tool
-from ..models import FRSDocument
+import importlib.util
+import sys
+import os
+
+# models.py 직접 로드
+models_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models.py')
+spec = importlib.util.spec_from_file_location("models", models_path)
+models_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(models_module)
+FRSDocument = models_module.FRSDocument
 
 
 @tool

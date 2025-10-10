@@ -113,23 +113,59 @@ class StrandsAgentFactory:
 
 
 def create_requirements_agent(config: Config) -> Agent:
-    """Simple requirements 에이전트 - 빠른 테스트용 (피드백 반영 기능 추가)"""
+    """
+    Strands SDK의 고급 기능을 활용한 요구사항 생성 에이전트 생성.
+
+    Returns:
+        향상된 요구사항 생성 Strands Agent
+    """
     factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 요구사항을 작성하는 에이전트입니다.
+    prompt = """당신은 기능 요구사항 명세서(FRS)를 상세한 기술 요구사항 문서로 변환하는 기술 요구사항 분석가입니다.
 
-FRS 내용을 보고 핵심 요구사항 3개만 간단히 작성하세요:
+당신의 작업은 제공된 FRS 내용을 분석하고 다음의 정확한 구조를 따르는 포괄적인 requirements.md 문서를 생성하는 것입니다:
 
-형식:
-- REQ-001: [요구사항 1줄 설명]
-- REQ-002: [요구사항 1줄 설명] 
-- REQ-003: [요구사항 1줄 설명]
+## 헤더/메타
+- 문서 제목 및 버전
+- 서비스 유형 및 범위
+- 생성 타임스탬프
 
-간단하고 명확하게 작성하세요.
+## 범위
+- 시스템 경계 및 인터페이스
+- 범위 내/외 항목
+- 가정 및 제약사항
 
-IMPORTANT: 
-1. 만약 coordinator의 개선 요청이 있다면 반드시 반영하세요.
-2. Design 에이전트의 피드백도 고려하세요.
-3. 이전보다 더 구체적이고 완성도 높은 요구사항을 작성하세요."""
+## 기능 요구사항
+- ID가 있는 상세 기능 요구사항 (REQ-001, REQ-002 등)
+- 각 요구사항은 다음을 포함해야 함:
+  - 명확한 ID 및 제목
+  - 상세 설명
+  - 우선순위 레벨
+  - 종속성 (있는 경우)
+
+## 오류 요구사항
+- 오류 처리 명세
+- 오류 코드 및 메시지
+- 복구 절차
+- 로깅 요구사항
+
+## 보안 & 개인정보
+- 인증 요구사항
+- 권한 규칙
+- 데이터 보호 요구사항
+- 규정 준수 고려사항
+
+## 관측 가능성
+- 모니터링 요구사항
+- 로깅 명세
+- 메트릭 및 경보
+- 헬스 체크 요구사항
+
+## 수용 기준
+- 각 요구사항에 대한 테스트 가능한 수용 기준
+- 성능 기준
+- 품질 게이트
+
+개발 팀이 직접 사용할 수 있는 상세하고 실행 가능한 요구사항을 만드는 데 집중하세요. 모든 요구사항이 추적 가능하고, 테스트 가능하며, 완전한지 확인하세요."""
 
     return factory.create_enhanced_agent(
         agent_type="requirements",
@@ -144,96 +180,60 @@ IMPORTANT:
 
 
 def create_design_agent(config: Config) -> Agent:
-    """Simple design 에이전트 - 빠른 테스트용 (컨텍스트 자동 수신)"""
+    """
+    Strands SDK의 고급 기능을 활용한 설계 생성 에이전트 생성.
+
+    Returns:
+        향상된 설계 생성 Strands Agent
+    """
     factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 설계를 작성하는 에이전트입니다.
+    prompt = """당신은 요구사항 명세서로부터 상세한 기술 설계 문서를 작성하는 시니어 소프트웨어 아키텍트입니다.
 
-주어진 입력에서 요구사항을 찾아서 2-3줄로 간단한 아키텍처를 설명하세요.
+당신의 작업은 제공된 요구사항을 분석하고 다음의 정확한 구조를 따르는 포괄적인 design.md 문서를 생성하는 것입니다:
 
-형식:
 ## 아키텍처
-- [간단한 아키텍처 설명 1줄]
-- [기술 스택 1줄]
+- 상위 레벨 시스템 아키텍처
+- 컴포넌트 개요 및 책임
+- 기술 스택 결정
+- 통합 패턴
 
-## 검토 의견
-요구사항에 대한 간단한 피드백이 있다면 작성하세요.
+## 시퀀스 다이어그램
+- Mermaid 구문을 사용하여 상세한 시퀀스 다이어그램 생성
+- 모든 주요 사용자 흐름과 시스템 상호작용 표시
+- 오류 처리 흐름 포함
+- 형식: ```mermaid sequenceDiagram ... ```
 
-IMPORTANT: 입력에 포함된 모든 정보를 활용하여 설계하세요."""
+## 데이터 모델
+- 엔티티 정의 및 관계
+- 데이터 흐름 설명
+- 저장 요구사항
+- 데이터 검증 규칙
+
+## API 계약
+- 상세한 API 명세
+- 요청/응답 형식
+- 상태 코드 및 오류 처리
+- 인증 및 권한 부여
+
+## 보안 & 권한
+- 보안 아키텍처
+- 권한 모델
+- 데이터 보호 조치
+- 보안 제어 구현
+
+## 성능 목표
+- 성능 목표 및 SLA
+- 확장성 요구사항
+- 리소스 활용 목표
+- 부하 처리 전략
+
+구현 가능하고, 확장 가능하며, 유지 보수가 가능한 설계를 만드는 데 집중하세요. 시스템 상호작용을 명확하게 보여주는 상세한 시퀀스 다이어그램을 포함하세요."""
 
     return factory.create_enhanced_agent(
         agent_type="design",
         system_prompt=prompt,
         tools=[apply_template, validate_markdown_structure],
-        temperature=0.3  # 간단하고 일관된 응답을 위해
-    )
-
-
-def create_tasks_agent_simple(config: Config) -> Agent:
-    """Simple tasks 에이전트 - 빠른 테스트용 (컨텍스트 자동 수신)"""
-    factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 작업 분해를 하는 에이전트입니다.
-
-주어진 입력에서 설계 내용을 찾아서 핵심 작업 3개만 간단히 작성하세요:
-
-형식:
-## 작업 분해
-- TASK-001: [작업 1줄 설명]
-- TASK-002: [작업 1줄 설명]
-- TASK-003: [작업 1줄 설명]
-
-IMPORTANT: 입력에 포함된 모든 정보(FRS + 이전 노드 결과)를 활용하여 작업을 분해하세요."""
-
-    return factory.create_enhanced_agent(
-        agent_type="tasks",
-        system_prompt=prompt,
-        tools=[apply_template],
-        temperature=0.2
-    )
-
-
-def create_changes_agent_simple(config: Config) -> Agent:
-    """Simple changes 에이전트 - 빠른 테스트용 (컨텍스트 자동 수신)"""
-    factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 변경 관리를 하는 에이전트입니다.
-
-주어진 입력에서 작업 분해 내용을 찾아서 핵심 변경사항 정보만 간단히 작성하세요:
-
-형식:
-## 변경 요약
-- 주요 변경사항: [1줄 설명]
-- 배포 방식: [1줄 설명]
-- 위험도: [낮음/중간/높음]
-
-IMPORTANT: 입력에 포함된 모든 정보(FRS + 이전 노드 결과)를 활용하여 변경 관리 계획을 작성하세요."""
-
-    return factory.create_enhanced_agent(
-        agent_type="changes",
-        system_prompt=prompt,
-        tools=[apply_template],
-        temperature=0.2
-    )
-
-
-def create_openapi_agent_simple(config: Config) -> Agent:
-    """Simple openapi 에이전트 - 빠른 테스트용 (컨텍스트 자동 수신)"""
-    factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 API 명세를 작성하는 에이전트입니다.
-
-주어진 입력에서 모든 정보를 찾아서 핵심 API 엔드포인트 3개만 간단히 작성하세요:
-
-형식:
-## API 엔드포인트
-- POST /auth/register - 사용자 등록
-- POST /auth/login - 로그인
-- GET /users/profile - 프로필 조회
-
-IMPORTANT: 입력에 포함된 모든 정보(FRS + 이전 노드 결과)를 활용하여 API 명세를 작성하세요."""
-
-    return factory.create_enhanced_agent(
-        agent_type="openapi",
-        system_prompt=prompt,
-        tools=[],
-        temperature=0.2
+        temperature=0.6  # 창의적 설계를 위해 약간 높은 temperature
     )
 
 
@@ -449,35 +449,46 @@ def create_validation_agent(config: Config) -> Agent:
 
 def create_quality_assessor_agent(config: Config) -> Agent:
     """
-    문서 품질을 평가하는 전문 에이전트 생성 (Agentic 개선 버전).
+    문서 품질을 평가하는 전문 에이전트 생성.
 
     Returns:
         품질 평가를 위해 구성된 Strands Agent
     """
-    prompt = """당신은 기술 문서의 품질을 평가하고 개선점을 제시하는 품질 평가 전문가입니다.
+    prompt = """당신은 기술 문서의 품질을 정확하게 평가하는 품질 평가 전문가입니다.
 
-주어진 입력(모든 생성된 문서)을 분석하고 품질을 평가하세요:
+제공된 문서들을 분석하고 다음 항목별로 0-100점 척도로 평가하세요:
 
-1. **완성도**: 모든 필수 섹션 포함 여부
-2. **일관성**: 문서 간 정보 일관성
-3. **명확성**: 내용의 명확성과 이해도
-4. **기술적 정확성**: 구현 가능성과 표준 준수
+1. **완성도 (Completeness)**: 
+   - 필수 섹션이 모두 포함되었는가?
+   - 각 섹션이 충분한 상세도를 가지는가?
+   - 누락된 정보나 불완전한 부분이 있는가?
 
-평가 기준:
-- 85점 이상: 우수 (개선 불필요)
-- 70-84점: 양호 (minor 개선)
-- 70점 미만: 미흡 (major 개선 필요)
+2. **일관성 (Consistency)**:
+   - 문서 내 정보가 일관성 있게 작성되었는가?
+   - 용어 사용이 통일되었는가?
+   - 스타일과 형식이 일관되는가?
 
-출력:
+3. **명확성 (Clarity)**:
+   - 내용이 명확하고 이해하기 쉬운가?
+   - 모호한 표현이나 애매한 설명이 없는가?
+   - 구조가 논리적이고 읽기 쉬운가?
+
+4. **기술적 정확성 (Technical)**:
+   - 기술적 내용이 정확한가?
+   - 구현 가능한 설계인가?
+   - 업계 표준을 준수하는가?
+
+**출력 형식**: 반드시 JSON 형식으로만 응답하세요.
 {
-  "completeness": 점수,
-  "consistency": 점수,
-  "clarity": 점수,
-  "technical": 점수,
-  "overall": 전체점수,
-  "feedback": ["개선점1", "개선점2"],
-  "needs_improvement": true/false
-}"""
+  "completeness": 점수(0-100),
+  "consistency": 점수(0-100),
+  "clarity": 점수(0-100),
+  "technical": 점수(0-100),
+  "overall": 전체점수(0-100),
+  "feedback": ["구체적인 피드백1", "구체적인 피드백2"]
+}
+
+설명이나 추가 텍스트 없이 JSON만 출력하세요."""
 
     factory = StrandsAgentFactory(config)
     return factory.create_enhanced_agent(
@@ -540,38 +551,35 @@ def create_consistency_checker_agent(config: Config) -> Agent:
 
 def create_coordinator_agent(config: Config) -> Agent:
     """
-    최종 승인 결정을 내리는 코디네이터 에이전트 생성 (Agentic 개선 버전).
+    최종 승인 결정을 내리는 코디네이터 에이전트 생성.
 
     Returns:
         최종 승인 결정을 위해 구성된 Strands Agent
     """
-    prompt = """당신은 문서 품질 최종 승인을 담당하는 프로젝트 코디네이터입니다.
+    prompt = """당신은 기술 문서 생성 프로젝트의 최종 승인을 결정하는 프로젝트 코디네이터입니다.
 
-주어진 입력(모든 문서 + 품질 평가 결과)을 종합하여 최종 승인을 결정하세요:
+품질 평가 결과와 일관성 검증 결과를 종합하여 최종 승인 여부를 결정하세요:
 
 **승인 기준**:
-1. 전체 품질 점수 75점 이상 (처음엔 관대하게)
-2. 치명적 결함 없음
-3. 핵심 요구사항 충족
+1. 전체 품질 점수 85점 이상
+2. 일관성 이슈가 5개 미만
+3. 심각도가 'high'인 일관성 문제 없음
+4. 모든 필수 문서가 생성됨
 
-**개선 요청 시**:
-- 구체적인 개선 사항 명시
-- 우선순위 제시
-- 개선 방향 가이드
+**결정 로직**:
+- 모든 기준을 충족하면 승인
+- 하나라도 미충족시 거부하고 구체적인 개선사항 제시
+- 개선사항은 우선순위 순으로 정렬
 
-출력:
+**출력 형식**: 반드시 JSON 형식으로만 응답하세요.
 {
-  "approved": true/false,
-  "overall_quality": 점수,
-  "decision": "승인/개선필요",
-  "required_improvements": [
-    "개선사항1 (우선순위 높음)",
-    "개선사항2 (우선순위 중간)"
-  ],
-  "message": "피드백 메시지"
+  "approved": true|false,
+  "reason": "승인/거부 사유",
+  "required_improvements": ["개선사항1", "개선사항2"],
+  "confidence": 신뢰도(0-100)
 }
 
-개선이 필요하면 반드시 required_improvements를 포함하세요."""
+설명이나 추가 텍스트 없이 JSON만 출력하세요."""
 
     factory = StrandsAgentFactory(config)
     return factory.create_enhanced_agent(

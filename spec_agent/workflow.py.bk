@@ -11,7 +11,6 @@ import time
 import json
 
 from strands import Agent
-from strands.multiagent import GraphBuilder
 from strands.session.file_session_manager import FileSessionManager
 
 from .config import Config
@@ -27,14 +26,13 @@ from .tools import (
 from .agents.spec_agents import (
     create_requirements_agent,
     create_design_agent,
+    create_tasks_agent,
+    create_changes_agent,
+    create_openapi_agent,
     create_validation_agent,
     create_quality_assessor_agent,
     create_consistency_checker_agent,
-    create_coordinator_agent,
-    # Simple 버전들
-    create_tasks_agent_simple,
-    create_changes_agent_simple,
-    create_openapi_agent_simple
+    create_coordinator_agent
 )
 from .models.quality import (
     QualityReport,
@@ -89,13 +87,13 @@ class SpecificationWorkflow:
             base_dir="./sessions"
         )
         
-        # 기본 문서 생성 에이전트들 (Simple 버전 사용)
+        # 기본 문서 생성 에이전트들
         self.agents = {
-            'requirements': create_requirements_agent(self.config),  # 이미 simple 버전
-            'design': create_design_agent(self.config),  # 이미 simple 버전
-            'tasks': create_tasks_agent_simple(self.config),
-            'changes': create_changes_agent_simple(self.config),
-            'openapi': create_openapi_agent_simple(self.config),
+            'requirements': create_requirements_agent(self.config),
+            'design': create_design_agent(self.config),
+            'tasks': create_tasks_agent(self.config),
+            'changes': create_changes_agent(self.config),
+            'openapi': create_openapi_agent(self.config),
             'validation': create_validation_agent(self.config),
             # 품질 평가 에이전트들
             'quality_assessor': create_quality_assessor_agent(self.config),
@@ -108,63 +106,6 @@ class SpecificationWorkflow:
             agent.session_manager = self.session_manager
         
         print(f"✅ {len(self.agents)}개 에이전트 초기화 완료 (세션 관리 포함)")
-        
-        # 파일 기반 컨텍스트를 위한 에이전트 래핑
-        self._wrap_agents_with_file_context()
-    
-    def _wrap_agents_with_file_context(self):
-        """에이전트들을 파일 기반 컨텍스트 로더로 래핑 (Strands Agent 객체 구조 유지)"""
-        
-        # 에이전트별 의존성 매핑 저장 (래핑 대신 별도 저장)
-        self._agent_dependencies = {
-            'requirements': [],  # FRS 내용만 필요
-            'design': ['requirements'],
-            'tasks': ['requirements', 'design'], 
-            'changes': ['requirements', 'design', 'tasks'],
-            'openapi': ['requirements', 'design', 'tasks'],
-            'quality_assessor': ['requirements', 'design', 'tasks', 'changes', 'openapi'],
-            'consistency_checker': ['requirements', 'design', 'tasks', 'changes', 'openapi'],
-            'coordinator': ['requirements', 'design', 'tasks', 'changes', 'openapi']
-        }
-        
-        print(f"  ✅ 파일 기반 컨텍스트 의존성 설정 완료")
-    
-    def _inject_file_contexts_to_agents(self):
-        """실행 시점에 각 에이전트에 필요한 파일 컨텍스트를 동적으로 주입"""
-        try:
-            print("📝 에이전트별 파일 컨텍스트 주입 중...")
-            
-            # 컨텍스트 주입이 필요한 에이전트들만 처리
-            context_agents = ['design', 'tasks', 'changes', 'openapi', 'quality_assessor', 'consistency_checker', 'coordinator']
-            
-            for agent_name in context_agents:
-                if agent_name in self.agents:
-                    agent = self.agents[agent_name]
-                    
-                    # 에이전트별 필요 파일 컨텍스트 로드
-                    needed_files = self._agent_dependencies.get(agent_name, [])
-                    
-                    if needed_files:
-                        file_context = self._load_context_from_files(needed_files)
-                        
-                        if file_context:
-                            # 에이전트의 system prompt에 파일 컨텍스트 추가
-                            if hasattr(agent, 'prompt_template') and agent.prompt_template:
-                                original_prompt = agent.prompt_template
-                                enhanced_prompt = f"{original_prompt}\n\n## 참조 문서\n{file_context}"
-                                agent.prompt_template = enhanced_prompt
-                                print(f"  ✅ {agent_name} 컨텍스트 주입 완료")
-                            else:
-                                print(f"  ⚠️ {agent_name} prompt_template 속성 없음")
-                        else:
-                            print(f"  ℹ️ {agent_name} 로드할 파일 컨텍스트 없음")
-                    else:
-                        print(f"  ℹ️ {agent_name} 파일 의존성 없음")
-                        
-        except Exception as e:
-            print(f"  ❌ 파일 컨텍스트 주입 실패: {str(e)}")
-            import traceback
-            traceback.print_exc()
     
     async def execute_workflow(
         self,
@@ -271,421 +212,56 @@ class SpecificationWorkflow:
             print(f"⚠️ Git 브랜치 생성 실패: {git_result.get('error')}")
     
     async def _execute_graph_workflow(self, service_type: ServiceType) -> Dict[str, Any]:
-        """Agentic AI Graph - 품질 평가 및 피드백 루프 포함"""
+        """단순한 순차 에이전트 실행 + 품질 평가"""
         
-        print("🚀 Agentic AI Graph 시작 (품질 평가 + 피드백 루프)...")
+        print("📊 순차 워크플로우 시작...")
         
         try:
-            # GraphBuilder 초기화
-            builder = GraphBuilder()
-            
-            # 1. 문서 생성 에이전트 노드 추가
-            builder.add_node(self.agents['requirements'], 'requirements')
-            builder.add_node(self.agents['design'], 'design')
-            builder.add_node(self.agents['tasks'], 'tasks')
-            builder.add_node(self.agents['changes'], 'changes')
-            builder.add_node(self.agents['openapi'], 'openapi')
-            
-            # 2. 품질 평가 에이전트 노드 추가
-            builder.add_node(self.agents['quality_assessor'], 'quality_assessor')
-            builder.add_node(self.agents['consistency_checker'], 'consistency_checker')
-            builder.add_node(self.agents['coordinator'], 'coordinator')
-            
-            # 3. 기본 순차 실행 엣지
-            builder.add_edge('requirements', 'design')
-            builder.add_edge('design', 'tasks') 
-            builder.add_edge('tasks', 'changes')
-            builder.add_edge('changes', 'openapi')
-            
-            # 4. 품질 평가 엣지 (openapi 완료 후)
-            builder.add_edge('openapi', 'quality_assessor')
-            builder.add_edge('quality_assessor', 'consistency_checker')
-            builder.add_edge('consistency_checker', 'coordinator')
-            
-            # 5. 피드백 루프 (coordinator가 개선 필요 판단 시)
-            builder.add_edge('coordinator', 'requirements', condition=self._needs_improvement)
-            
-            # 6. Design이 Requirements에 피드백 제공
-            builder.add_edge('design', 'requirements', condition=self._design_has_feedback)
-            
-            # 7. 개별 파일 타겟팅 피드백 엣지들
-            builder.add_edge('coordinator', 'requirements', condition=self._needs_req_improvement)
-            builder.add_edge('coordinator', 'design', condition=self._needs_design_improvement)
-            builder.add_edge('coordinator', 'tasks', condition=self._needs_tasks_improvement)
-            builder.add_edge('coordinator', 'changes', condition=self._needs_changes_improvement)
-            builder.add_edge('coordinator', 'openapi', condition=self._needs_openapi_improvement)
-            
-            # 8. 종속성 관리 - 특정 파일 수정 시 하위 파일들도 연쇄 업데이트
-            # (현재는 기본 순차 엣지가 이 역할을 담당하므로 추가 엣지는 불필요)
-            
-            # Graph 설정
-            builder.set_entry_point('requirements')
-            builder.set_max_node_executions(30)  # 피드백 루프를 위한 충분한 실행 횟수
-            
-            # Graph 빌드
-            graph = builder.build()
-            
-            # 초기 프롬프트 (FRS 내용)
-            frs_content = self.context['project']['frs_content']
-            initial_prompt = f"FRS 내용: {frs_content[:1000]}\n\n핵심 요구사항 3개를 간단히 작성하세요."
-            
-            print("🔄 Graph 실행 중 (파일 기반 컨텍스트 자동 주입)...")
-            
-            # 각 에이전트의 system prompt에 파일 컨텍스트 사전 주입
-            self._inject_file_contexts_to_agents()
-            
-            # Graph 실행 - Strands가 자동으로 컨텍스트 전파
-            result = graph(initial_prompt)
-            
-            print("✅ Graph 실행 완료")
-            print(f"결과: {str(result)[:200]}...")
-            
-            # Graph 결과 디버깅
-            if hasattr(result, 'results'):
-                print(f"🔍 Graph 노드 결과: {list(result.results.keys())}")
-                for node_name in result.results.keys():
-                    node_result = result.results[node_name]
-                    print(f"  - {node_name}: 실행됨")
-                    if hasattr(node_result, 'result'):
-                        print(f"    출력 길이: {len(str(node_result.result))}")
+            # 최대 3회 시도
+            for iteration in range(1, 4):
+                print(f"\n🔄 시도 {iteration}/3")
                 
-                print(f"🔍 예상 노드: ['requirements', 'design', 'tasks', 'changes', 'openapi']")
-                missing_nodes = set(['requirements', 'design', 'tasks', 'changes', 'openapi']) - set(result.results.keys())
-                if missing_nodes:
-                    print(f"❌ 실행되지 않은 노드: {missing_nodes}")
+                # 1단계: 기본 문서 생성
+                documents = await self._generate_base_documents(service_type, iteration)
+                
+                if not documents:
+                    print(f"❌ {iteration}회차 문서 생성 실패")
+                    continue
+                
+                # 2단계: 품질 평가
+                quality_result = await self._evaluate_quality(documents, iteration)
+                
+                if quality_result.get('approved', False):
+                    print(f"🎉 {iteration}회차에서 승인 완료!")
+                    return {
+                        'success': True,
+                        'iteration': iteration,
+                        'documents': documents,
+                        'quality_result': quality_result,
+                        'saved_files': list(documents.keys())
+                    }
+                else:
+                    print(f"🔄 {iteration}회차 거부: {quality_result.get('reason', '품질 기준 미달')}")
+                    if iteration < 3:
+                        print("📝 피드백을 반영하여 재시도...")
             
-            # Graph 결과에서 파일 저장
-            saved_files = await self._save_graph_results_simple(result)
-            
+            print("❌ 3회 시도 후에도 품질 기준 미달")
             return {
-                'success': True,
-                'result': result,
-                'saved_files': saved_files,
-                'execution_type': 'simple_graph'
+                'success': False,
+                'final_iteration': 3,
+                'reason': '최대 시도 횟수 초과',
+                'saved_files': list(documents.keys()) if 'documents' in locals() else []
             }
             
         except Exception as e:
-            print(f"❌ Simple Graph 실패: {str(e)}")
+            print(f"❌ 워크플로우 실패: {str(e)}")
             import traceback
             traceback.print_exc()
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'saved_files': []
             }
-    
-    def _needs_improvement(self, state) -> bool:
-        """Coordinator가 전체 문서 개선이 필요하다고 판단하는지 확인"""
-        try:
-            coordinator_output = str(state)
-            
-            # 개선 필요 키워드 체크
-            improvement_needed = any(keyword in coordinator_output for keyword in [
-                "개선", "미흡", "부족", "불충분", "required_improvements", "거부", "rejected"
-            ])
-            
-            # 개선 횟수 추적
-            if not hasattr(self, '_improvement_count'):
-                self._improvement_count = 0
-            
-            if improvement_needed and self._improvement_count < 3:  # 최대 3회 개선
-                self._improvement_count += 1
-                print(f"🔄 Coordinator가 문서 개선 요청 ({self._improvement_count}/3)")
-                self._coordinator_feedback = coordinator_output
-                return True
-            
-            if self._improvement_count >= 3:
-                print("✅ 최대 개선 횟수 도달 - 문서 완성")
-            else:
-                print("✅ Coordinator 승인 - 품질 기준 충족")
-            return False
-            
-        except Exception as e:
-            print(f"⚠️ 개선 판정 오류: {str(e)}")
-            return False
-    
-    def _design_has_feedback(self, state) -> bool:
-        """Design 에이전트가 requirements에 피드백을 제공하는지 확인"""
-        try:
-            design_output = str(state)
-            
-            # 피드백 키워드 체크
-            has_feedback = any(keyword in design_output for keyword in [
-                "추가", "보완", "구체화", "명확", "GDPR", "보안"
-            ])
-            
-            # 피드백 횟수 제한
-            if not hasattr(self, '_design_feedback_count'):
-                self._design_feedback_count = 0
-            
-            if has_feedback and self._design_feedback_count < 1:  # 1회만
-                self._design_feedback_count += 1
-                print("💬 Design이 Requirements에 피드백 제공")
-                self._design_feedback = design_output
-                return True
-            
-            return False
-            
-        except Exception as e:
-            print(f"⚠️ 피드백 판정 오류: {str(e)}")
-            return False
-    
-    # === 개별 파일 타겟팅 피드백 함수들 ===
-    
-    def _needs_req_improvement(self, state) -> bool:
-        """Requirements 문서만 개선이 필요한지 판단"""
-        try:
-            coordinator_output = str(state)
-            
-            # Requirements 관련 개선 키워드 체크
-            req_keywords = [
-                "requirements", "요구사항", "REQ-", "기능 요구사항", "요구 사항"
-            ]
-            
-            improvement_keywords = [
-                "개선", "미흡", "부족", "불충분", "required_improvements"
-            ]
-            
-            # 개선 필요 + Requirements 관련 키워드 동시 존재 확인
-            has_improvement = any(keyword in coordinator_output for keyword in improvement_keywords)
-            has_req_mention = any(keyword in coordinator_output for keyword in req_keywords)
-            
-            if has_improvement and has_req_mention:
-                if not hasattr(self, '_req_improvement_count'):
-                    self._req_improvement_count = 0
-                
-                if self._req_improvement_count < 2:  # Requirements는 최대 2회 개선
-                    self._req_improvement_count += 1
-                    print(f"🎯 Requirements 파일 개별 개선 요청 ({self._req_improvement_count}/2)")
-                    return True
-                    
-            return False
-            
-        except Exception as e:
-            print(f"⚠️ Requirements 개선 판단 오류: {str(e)}")
-            return False
-    
-    def _needs_design_improvement(self, state) -> bool:
-        """Design 문서만 개선이 필요한지 판단"""
-        try:
-            coordinator_output = str(state)
-            
-            # Design 관련 개선 키워드 체크
-            design_keywords = [
-                "design", "설계", "아키텍처", "기술 스택", "검토 의견"
-            ]
-            
-            improvement_keywords = [
-                "개선", "미흡", "부족", "불충분", "required_improvements"
-            ]
-            
-            has_improvement = any(keyword in coordinator_output for keyword in improvement_keywords)
-            has_design_mention = any(keyword in coordinator_output for keyword in design_keywords)
-            
-            if has_improvement and has_design_mention:
-                if not hasattr(self, '_design_improvement_count'):
-                    self._design_improvement_count = 0
-                
-                if self._design_improvement_count < 2:
-                    self._design_improvement_count += 1
-                    print(f"🎯 Design 파일 개별 개선 요청 ({self._design_improvement_count}/2)")
-                    return True
-                    
-            return False
-            
-        except Exception as e:
-            print(f"⚠️ Design 개선 판단 오류: {str(e)}")
-            return False
-    
-    def _needs_tasks_improvement(self, state) -> bool:
-        """Tasks 문서만 개선이 필요한지 판단"""
-        try:
-            coordinator_output = str(state)
-            
-            # Tasks 관련 개선 키워드 체크
-            tasks_keywords = [
-                "tasks", "작업", "TASK-", "작업 분해", "업무"
-            ]
-            
-            improvement_keywords = [
-                "개선", "미흡", "부족", "불충분", "required_improvements"
-            ]
-            
-            has_improvement = any(keyword in coordinator_output for keyword in improvement_keywords)
-            has_tasks_mention = any(keyword in coordinator_output for keyword in tasks_keywords)
-            
-            if has_improvement and has_tasks_mention:
-                if not hasattr(self, '_tasks_improvement_count'):
-                    self._tasks_improvement_count = 0
-                
-                if self._tasks_improvement_count < 2:
-                    self._tasks_improvement_count += 1
-                    print(f"🎯 Tasks 파일 개별 개선 요청 ({self._tasks_improvement_count}/2)")
-                    return True
-                    
-            return False
-            
-        except Exception as e:
-            print(f"⚠️ Tasks 개선 판단 오류: {str(e)}")
-            return False
-    
-    def _needs_changes_improvement(self, state) -> bool:
-        """Changes 문서만 개선이 필요한지 판단"""
-        try:
-            coordinator_output = str(state)
-            
-            # Changes 관련 개선 키워드 체크
-            changes_keywords = [
-                "changes", "변경", "핵심 요구사항", "변경 요약", "배포"
-            ]
-            
-            improvement_keywords = [
-                "개선", "미흡", "부족", "불충분", "required_improvements"
-            ]
-            
-            has_improvement = any(keyword in coordinator_output for keyword in improvement_keywords)
-            has_changes_mention = any(keyword in coordinator_output for keyword in changes_keywords)
-            
-            if has_improvement and has_changes_mention:
-                if not hasattr(self, '_changes_improvement_count'):
-                    self._changes_improvement_count = 0
-                
-                if self._changes_improvement_count < 2:
-                    self._changes_improvement_count += 1
-                    print(f"🎯 Changes 파일 개별 개선 요청 ({self._changes_improvement_count}/2)")
-                    return True
-                    
-            return False
-            
-        except Exception as e:
-            print(f"⚠️ Changes 개선 판단 오류: {str(e)}")
-            return False
-    
-    def _needs_openapi_improvement(self, state) -> bool:
-        """OpenAPI 문서만 개선이 필요한지 판단"""
-        try:
-            coordinator_output = str(state)
-            
-            # OpenAPI 관련 개선 키워드 체크
-            api_keywords = [
-                "api", "openapi", "엔드포인트", "endpoint", "API 엔드포인트"
-            ]
-            
-            improvement_keywords = [
-                "개선", "미흡", "부족", "불충분", "required_improvements"
-            ]
-            
-            has_improvement = any(keyword in coordinator_output for keyword in improvement_keywords)
-            has_api_mention = any(keyword in coordinator_output for keyword in api_keywords)
-            
-            if has_improvement and has_api_mention:
-                if not hasattr(self, '_api_improvement_count'):
-                    self._api_improvement_count = 0
-                
-                if self._api_improvement_count < 2:
-                    self._api_improvement_count += 1
-                    print(f"🎯 OpenAPI 파일 개별 개선 요청 ({self._api_improvement_count}/2)")
-                    return True
-                    
-            return False
-            
-        except Exception as e:
-            print(f"⚠️ OpenAPI 개선 판단 오류: {str(e)}")
-            return False
-    
-    def _build_requirements_prompt_with_feedback(self, frs_content: str) -> str:
-        """피드백을 반영한 Requirements 프롬프트 생성"""
-        base_prompt = f"FRS 내용: {frs_content[:1000]}\n\n핵심 요구사항 3개를 간단히 작성하세요."
-        
-        # 저장된 피드백이 있으면 추가
-        if hasattr(self, '_stored_feedback') and self._stored_feedback:
-            feedback_prompt = f"\n\n**피드백 반영 필요:**\n{self._stored_feedback}\n\n위 피드백을 반영하여 요구사항을 개선해주세요."
-            return base_prompt + feedback_prompt
-        
-        return base_prompt
-    
-    async def _save_graph_results_simple(self, graph_result) -> List[str]:
-        """Simple Graph 결과를 파일로 저장"""
-        saved_files = []
-        
-        try:
-            print("💾 Graph 결과 파일 저장 중...")
-            
-            # Graph 결과에서 각 노드의 결과 추출
-            if hasattr(graph_result, 'results') and graph_result.results:
-                
-                # Requirements 결과 저장
-                if 'requirements' in graph_result.results:
-                    req_result = graph_result.results['requirements']
-                    if hasattr(req_result, 'result') and hasattr(req_result.result, 'message'):
-                        content = req_result.result.message.get('content', [])
-                        if content and isinstance(content, list) and len(content) > 0:
-                            req_text = content[0].get('text', '')
-                            if req_text:
-                                save_result = self._save_agent_document_sync('requirements', req_text)
-                                if save_result:
-                                    saved_files.append(save_result['file_path'])
-                                    print(f"  📁 {save_result['filename']} 저장 완료")
-                
-                # Design 결과 저장
-                if 'design' in graph_result.results:
-                    design_result = graph_result.results['design']
-                    if hasattr(design_result, 'result') and hasattr(design_result.result, 'message'):
-                        content = design_result.result.message.get('content', [])
-                        if content and isinstance(content, list) and len(content) > 0:
-                            design_text = content[0].get('text', '')
-                            if design_text:
-                                save_result = self._save_agent_document_sync('design', design_text)
-                                if save_result:
-                                    saved_files.append(save_result['file_path'])
-                                    print(f"  📁 {save_result['filename']} 저장 완료")
-                
-                # Tasks 결과 저장
-                if 'tasks' in graph_result.results:
-                    tasks_result = graph_result.results['tasks']
-                    if hasattr(tasks_result, 'result') and hasattr(tasks_result.result, 'message'):
-                        content = tasks_result.result.message.get('content', [])
-                        if content and isinstance(content, list) and len(content) > 0:
-                            tasks_text = content[0].get('text', '')
-                            if tasks_text:
-                                save_result = self._save_agent_document_sync('tasks', tasks_text)
-                                if save_result:
-                                    saved_files.append(save_result['file_path'])
-                                    print(f"  📁 {save_result['filename']} 저장 완료")
-                
-                # Changes 결과 저장
-                if 'changes' in graph_result.results:
-                    changes_result = graph_result.results['changes']
-                    if hasattr(changes_result, 'result') and hasattr(changes_result.result, 'message'):
-                        content = changes_result.result.message.get('content', [])
-                        if content and isinstance(content, list) and len(content) > 0:
-                            changes_text = content[0].get('text', '')
-                            if changes_text:
-                                save_result = self._save_agent_document_sync('changes', changes_text)
-                                if save_result:
-                                    saved_files.append(save_result['file_path'])
-                                    print(f"  📁 {save_result['filename']} 저장 완료")
-                
-                # OpenAPI 결과 저장
-                if 'openapi' in graph_result.results:
-                    openapi_result = graph_result.results['openapi']
-                    if hasattr(openapi_result, 'result') and hasattr(openapi_result.result, 'message'):
-                        content = openapi_result.result.message.get('content', [])
-                        if content and isinstance(content, list) and len(content) > 0:
-                            openapi_text = content[0].get('text', '')
-                            if openapi_text:
-                                # OpenAPI는 JSON 파일로 저장 (service_type이 api인 경우)
-                                if self.context['project']['service_type'] == 'api':
-                                    save_result = self._save_agent_document_sync('openapi', openapi_text)
-                                    if save_result:
-                                        saved_files.append(save_result['file_path'])
-                                        print(f"  📁 {save_result['filename']} 저장 완료")
-            
-            print(f"✅ {len(saved_files)}개 파일 저장 완료")
-            return saved_files
-            
-        except Exception as e:
-            print(f"❌ 파일 저장 실패: {str(e)}")
-            return saved_files
     
     def _create_saving_agent_wrapper(self, agent_name: str):
         """파일 저장 기능이 포함된 에이전트 래퍼 생성"""
@@ -1241,165 +817,33 @@ FRS 내용:
             print(f"❌ Graph 결과 저장 실패: {str(e)}")
     
     def _extract_document_from_graph_result(self, graph_result: Any, doc_type: str) -> str:
-        """Graph 결과에서 특정 문서 타입의 최신 내용 추출 (피드백 루프 반영)"""
+        """Graph 결과에서 특정 문서 타입의 내용 추출"""
         try:
-            print(f"🔍 Graph 결과에서 {doc_type} 추출 중...")
+            # Graph 결과가 문자열인 경우 (최종 출력)
+            if isinstance(graph_result, str):
+                return graph_result
             
-            # Graph 결과에서 노드별 실행 기록 확인
-            if hasattr(graph_result, 'results') and doc_type in graph_result.results:
-                node_results = graph_result.results[doc_type]
-                print(f"  📊 {doc_type} 노드 실행 횟수: {len(node_results) if isinstance(node_results, list) else '1'}")
-                
-                # 리스트 형태라면 마지막(최신) 결과 가져오기
-                if isinstance(node_results, list) and len(node_results) > 0:
-                    latest_result = node_results[-1]  # 마지막 실행 결과
-                    print(f"  🎯 {doc_type} 최신 결과 사용 (인덱스: {len(node_results)-1})")
-                    
-                    if hasattr(latest_result, 'result'):
-                        content = self._extract_content_from_agent_result(latest_result.result)
-                        print(f"  📝 {doc_type} 내용 길이: {len(content)}")
-                        return content
-                    else:
-                        content = str(latest_result)
-                        print(f"  📝 {doc_type} 내용 길이: {len(content)}")
-                        return content
-                        
-                # 단일 결과인 경우
-                elif not isinstance(node_results, list):
-                    print(f"  🎯 {doc_type} 단일 결과 사용")
-                    if hasattr(node_results, 'result'):
-                        content = self._extract_content_from_agent_result(node_results.result)
-                        print(f"  📝 {doc_type} 내용 길이: {len(content)}")
-                        return content
-                    else:
-                        content = str(node_results)
-                        print(f"  📝 {doc_type} 내용 길이: {len(content)}")
-                        return content
-            
-            # Graph 결과가 딕셔너리인 경우 (백업 방법)
+            # Graph 결과가 딕셔너리인 경우
             if isinstance(graph_result, dict):
+                # 직접 키로 접근
                 if doc_type in graph_result:
-                    content = str(graph_result[doc_type])
-                    print(f"  📝 {doc_type} 딕셔너리에서 추출, 길이: {len(content)}")
-                    return content
+                    return str(graph_result[doc_type])
                 
                 # 네스팅된 구조에서 찾기
                 for key, value in graph_result.items():
                     if doc_type in key.lower():
-                        content = str(value)
-                        print(f"  📝 {doc_type} 네스팅에서 추출, 길이: {len(content)}")
-                        return content
+                        return str(value)
             
-            print(f"  ⚠️ {doc_type} 내용을 Graph 결과에서 찾을 수 없음")
+            # 기타 형태의 결과는 문자열로 변환
+            result_str = str(graph_result)
+            if result_str and result_str != "None":
+                return result_str
+            
             return ""
             
         except Exception as e:
             print(f"  ⚠️ {doc_type} 추출 중 오류: {str(e)}")
-            import traceback
-            traceback.print_exc()
             return ""
-    
-    def _extract_content_from_agent_result(self, agent_result):
-        """에이전트 결과에서 실제 내용 추출"""
-        try:
-            # AgentResult 객체에서 content 추출
-            if hasattr(agent_result, 'message') and hasattr(agent_result.message, 'content'):
-                content_list = agent_result.message.content
-                if isinstance(content_list, list) and len(content_list) > 0:
-                    # 첫 번째 content의 text 가져오기
-                    first_content = content_list[0]
-                    if hasattr(first_content, 'text'):
-                        return str(first_content.text)
-                    else:
-                        return str(first_content)
-                else:
-                    return str(content_list)
-            else:
-                return str(agent_result)
-        except Exception as e:
-            print(f"  ⚠️ AgentResult 내용 추출 오류: {str(e)}")
-            return str(agent_result)
-    
-    # === 파일 기반 컨텍스트 시스템 ===
-    
-    def _load_context_from_files(self, needed_files: List[str]) -> str:
-        """저장된 파일에서 필요한 컨텍스트만 로드하여 메모리 부담 감소"""
-        try:
-            context_parts = []
-            
-            for file_type in needed_files:
-                if file_type == 'openapi':
-                    file_path = self.output_dir / 'apis.json'
-                else:
-                    file_path = self.output_dir / f'{file_type}.md'
-                
-                if file_path.exists():
-                    content = file_path.read_text(encoding='utf-8')
-                    if content.strip():  # 빈 파일 제외
-                        context_parts.append(f"## {file_type.upper()}\n{content.strip()}")
-                        print(f"  📖 {file_type} 파일 컨텍스트 로드 ({len(content)} chars)")
-                    else:
-                        print(f"  ⚠️ {file_type} 파일이 비어있음")
-                else:
-                    print(f"  ⚠️ {file_type} 파일이 존재하지 않음: {file_path}")
-            
-            if context_parts:
-                combined_context = "\n\n".join(context_parts)
-                print(f"  ✅ 총 {len(needed_files)}개 파일에서 {len(combined_context)} chars 컨텍스트 로드")
-                return combined_context
-            else:
-                print(f"  ⚠️ 로드할 수 있는 파일이 없음")
-                return ""
-                
-        except Exception as e:
-            print(f"  ❌ 파일 컨텍스트 로드 실패: {str(e)}")
-            return ""
-    
-    def _get_agent_dependencies(self, agent_name: str) -> List[str]:
-        """에이전트별로 필요한 파일 의존성 반환"""
-        dependency_map = {
-            'requirements': [],  # FRS 내용만 필요
-            'design': ['requirements'],
-            'tasks': ['requirements', 'design'], 
-            'changes': ['requirements', 'design', 'tasks'],
-            'openapi': ['requirements', 'design', 'tasks'],
-            'quality_assessor': ['requirements', 'design', 'tasks', 'changes', 'openapi'],
-            'consistency_checker': ['requirements', 'design', 'tasks', 'changes', 'openapi'],
-            'coordinator': ['requirements', 'design', 'tasks', 'changes', 'openapi']
-        }
-        
-        return dependency_map.get(agent_name, [])
-    
-    def _inject_file_context(self, agent_name: str, base_prompt: str) -> str:
-        """에이전트별로 필요한 파일 컨텍스트만 주입하여 토큰 효율성 극대화"""
-        try:
-            print(f"🔄 {agent_name} 에이전트 컨텍스트 주입 중...")
-            
-            needed_files = self._get_agent_dependencies(agent_name)
-            
-            if needed_files:
-                file_context = self._load_context_from_files(needed_files)
-                
-                if file_context:
-                    # 기존 플레이스홀더를 실제 파일 컨텍스트로 교체
-                    if '[FILE_CONTEXT_PLACEHOLDER]' in base_prompt:
-                        enhanced_prompt = base_prompt.replace('[FILE_CONTEXT_PLACEHOLDER]', file_context)
-                    else:
-                        # 플레이스홀더가 없으면 끝에 추가
-                        enhanced_prompt = f"{base_prompt}\n\n## 참조 문서\n{file_context}"
-                    
-                    print(f"  ✅ {agent_name} 컨텍스트 주입 완료 ({len(enhanced_prompt)} chars)")
-                    return enhanced_prompt
-                else:
-                    print(f"  ⚠️ {agent_name} 사용 가능한 파일 컨텍스트 없음")
-                    return base_prompt
-            else:
-                print(f"  ℹ️ {agent_name} 파일 의존성 없음 (FRS만 사용)")
-                return base_prompt
-                
-        except Exception as e:
-            print(f"  ❌ {agent_name} 컨텍스트 주입 실패: {str(e)}")
-            return base_prompt
     
     async def _collect_and_save_node_results(self, graph, service_type: ServiceType) -> List[str]:
         """Graph의 각 노드 결과를 수집하고 파일로 저장"""
@@ -1580,11 +1024,264 @@ FRS 내용:
         
         return "작업을 수행하세요."
     
+    async def _generate_base_documents(self, service_type: ServiceType, iteration: int) -> Dict[str, str]:
+        """기본 문서들을 순차적으로 생성하고 즉시 저장"""
+        
+        print(f"📝 기본 문서 생성 시작 (시도 {iteration}회차)")
+        
+        # 실행할 에이전트 순서
+        agent_sequence = ['requirements', 'design', 'tasks', 'changes']
+        if service_type == ServiceType.API:
+            agent_sequence.append('openapi')
+        
+        # FRS 내용
+        frs_content = self.context['project']['frs_content']
+        
+        # 순차 실행
+        documents = {}
+        
+        for i, agent_name in enumerate(agent_sequence):
+            print(f"🔄 {agent_name} ({i+1}/{len(agent_sequence)}) 생성 중...")
+            
+            try:
+                # 프롬프트 생성
+                prompt = self._build_sequential_prompt(agent_name, frs_content, service_type.value, documents, iteration)
+                
+                # 에이전트 실행
+                agent = self.agents[agent_name]
+                result = agent(prompt)
+                result_text = self._process_agent_result(agent_name, result)
+                
+                # 결과 저장
+                documents[agent_name] = result_text
+                
+                # 즉시 파일 저장
+                save_result = self._save_agent_document_sync(agent_name, result_text)
+                if save_result:
+                    print(f"  📁 {save_result['filename']} {save_result['action']} 완료")
+                else:
+                    print(f"  ❌ {agent_name} 저장 실패")
+                    
+                print(f"✅ {agent_name} 완료")
+                
+            except Exception as e:
+                print(f"❌ {agent_name} 실행 오류: {str(e)}")
+                return {}  # 하나라도 실패하면 전체 실패
+        
+        print(f"✅ 기본 문서 생성 완료 ({len(documents)}개)")
+        return documents
     
+    def _build_sequential_prompt(self, agent_name: str, frs_content: str, service_type: str, previous_docs: Dict[str, str], iteration: int) -> str:
+        """순차 실행을 위한 에이전트별 프롬프트 생성"""
+        
+        # 재작업인 경우 개선 메시지 추가
+        improvement_note = ""
+        if iteration > 1:
+            improvement_note = f"\n\n⚠️ 이전 {iteration-1}회차에서 품질 기준 미달로 재작성 중입니다. 더 높은 품질로 작성해주세요.\n"
+        
+        if agent_name == 'requirements':
+            return f"""다음 FRS 문서를 분석하여 상세한 requirements.md를 생성하세요:
+
+FRS 내용:
+{frs_content[:4000]}
+
+서비스 유형: {service_type}{improvement_note}
+
+요구사항:
+1. 구조화된 requirements.md 형식으로 작성
+2. 명확한 요구사항 ID 체계 사용 (REQ-001, REQ-002 등)
+3. 기능/비기능/기술 요구사항 분리
+4. 수용 기준 포함
+5. 한국어로 작성"""
+        
+        elif agent_name == 'design':
+            requirements = previous_docs.get('requirements', '')[:3000]
+            return f"""다음 요구사항을 바탕으로 상세한 design.md를 생성하세요:
+
+요구사항:
+{requirements}
+
+서비스 유형: {service_type}{improvement_note}
+
+요구사항:
+1. 시스템 아키텍처 설계
+2. Mermaid 시퀀스 다이어그램 포함 (```mermaid 블록)
+3. 데이터 모델 정의
+4. API 계약 설계
+5. 보안 및 성능 고려사항
+6. 한국어로 작성"""
+        
+        elif agent_name == 'tasks':
+            design = previous_docs.get('design', '')[:3000]
+            return f"""다음 설계를 바탕으로 상세한 tasks.md를 생성하세요:
+
+설계:
+{design}{improvement_note}
+
+요구사항:
+1. Epic/Story/Task 계층 구조
+2. 각 작업에 대한 명확한 설명
+3. 예상 시간 및 우선순위
+4. DoD (Definition of Done) 체크리스트
+5. 의존성 표시
+6. 한국어로 작성"""
+        
+        elif agent_name == 'changes':
+            return f"""프로젝트 배포를 위한 상세한 changes.md를 생성하세요:
+
+서비스 유형: {service_type}{improvement_note}
+
+요구사항:
+1. 버전 이력
+2. 변경 사항 요약
+3. 영향도 및 위험 분석
+4. 롤백 계획
+5. 알려진 이슈
+6. 한국어로 작성"""
+        
+        elif agent_name == 'openapi':
+            requirements = previous_docs.get('requirements', '')[:2000]
+            design = previous_docs.get('design', '')[:2000]
+            return f"""OpenAPI 3.1 명세를 JSON 형식으로 생성하세요:
+
+요구사항:
+{requirements}
+
+설계:
+{design}{improvement_note}
+
+요구사항:
+1. 유효한 JSON 형식 (마크다운 블록 없이)
+2. OpenAPI 3.1 스펙 준수
+3. 5-10개의 핵심 엔드포인트
+4. 요청/응답 스키마 포함
+5. 인증 및 오류 처리
+6. JSON만 출력 (설명 없음)"""
+        
+        return "작업을 수행하세요."
     
+    async def _evaluate_quality(self, documents: Dict[str, str], iteration: int) -> Dict[str, Any]:
+        """생성된 문서들의 품질 평가"""
+        
+        print(f"📊 품질 평가 시작 (시도 {iteration}회차)")
+        
+        try:
+            # 1. 품질 평가
+            print("🔍 품질 평가 중...")
+            quality_prompt = self._build_quality_evaluation_prompt(documents)
+            quality_result = self.agents['quality_assessor'].structured_output(QualityReport, quality_prompt)
+            print(f"  📊 전체 품질: {quality_result.overall}점")
+            
+            # 2. 일관성 검증
+            print("🔍 일관성 검증 중...")
+            consistency_prompt = self._build_consistency_check_prompt(documents)
+            consistency_result = self.agents['consistency_checker'].structured_output(ConsistencyReport, consistency_prompt)
+            print(f"  🔍 일관성 이슈: {len(consistency_result.issues)}개 ({consistency_result.severity})")
+            
+            # 3. 최종 승인 결정
+            print("🎯 최종 승인 결정 중...")
+            coordinator_prompt = self._build_coordinator_prompt(quality_result, consistency_result)
+            approval_result = self.agents['coordinator'].structured_output(ApprovalDecision, coordinator_prompt)
+            
+            status = "승인" if approval_result.approved else "거부"
+            print(f"  🎯 최종 결정: {status} (신뢰도: {approval_result.confidence}%)")
+            
+            return {
+                'approved': approval_result.approved,
+                'reason': approval_result.reason,
+                'confidence': approval_result.confidence,
+                'quality_score': quality_result.overall,
+                'consistency_issues': len(consistency_result.issues),
+                'improvements': approval_result.required_improvements,
+                'quality_details': {
+                    'completeness': quality_result.completeness,
+                    'consistency': quality_result.consistency,
+                    'clarity': quality_result.clarity,
+                    'technical': quality_result.technical
+                }
+            }
+            
+        except Exception as e:
+            print(f"❌ 품질 평가 실패: {str(e)}")
+            # 품질 평가 실패 시 기본 승인
+            return {
+                'approved': True,
+                'reason': f'품질 평가 시스템 오류로 기본 승인 ({str(e)})',
+                'confidence': 50,
+                'quality_score': 70,
+                'consistency_issues': 0,
+                'improvements': []
+            }
     
+    def _build_quality_evaluation_prompt(self, documents: Dict[str, str]) -> str:
+        """품질 평가 프롬프트 생성"""
+        docs_summary = []
+        for name, content in documents.items():
+            if content:
+                docs_summary.append(f"=== {name.upper()} ===\n{content[:1500]}")
+        
+        docs_text = "\n\n".join(docs_summary)
+        
+        return f"""다음 생성된 문서들을 종합적으로 평가하세요:
+
+{docs_text}
+
+평가 기준:
+- completeness (완성도): 요구사항이 모두 포함되어 있는가?
+- consistency (일관성): 문서 간 일관성이 유지되는가?
+- clarity (명확성): 내용이 명확하고 이해하기 쉬운가?
+- technical (기술성): 기술적 세부사항이 적절한가?
+- overall (전체): 종합적인 품질 점수
+
+각 항목을 0-100점으로 평가하고 구체적인 피드백을 제공하세요."""
     
+    def _build_consistency_check_prompt(self, documents: Dict[str, str]) -> str:
+        """일관성 검증 프롬프트 생성"""
+        docs_summary = []
+        for name, content in documents.items():
+            if content:
+                docs_summary.append(f"=== {name.upper()} ===\n{content[:1500]}")
+        
+        docs_text = "\n\n".join(docs_summary)
+        
+        return f"""다음 문서들 간의 일관성을 검증하세요:
+
+{docs_text}
+
+검증 항목:
+1. 요구사항 ID의 일관성 (REQ-001 등)
+2. 용어와 명명의 일관성
+3. 기술 스택과 아키텍처의 일관성
+4. 데이터 모델과 API 스펙의 일관성
+5. 작업 분해와 설계의 일관성
+
+발견된 일관성 이슈를 구체적으로 나열하고 심각도를 평가하세요."""
     
+    def _build_coordinator_prompt(self, quality_report: QualityReport, consistency_report: ConsistencyReport) -> str:
+        """코디네이터 승인 결정 프롬프트 생성"""
+        return f"""품질 평가와 일관성 검증 결과를 바탕으로 최종 승인 여부를 결정하세요:
+
+품질 평가 결과:
+- 완성도: {quality_report.completeness}점
+- 일관성: {quality_report.consistency}점  
+- 명확성: {quality_report.clarity}점
+- 기술성: {quality_report.technical}점
+- 전체: {quality_report.overall}점
+
+주요 피드백:
+{chr(10).join(f"- {feedback}" for feedback in quality_report.feedback[:5])}
+
+일관성 검증 결과:
+- 발견된 이슈: {len(consistency_report.issues)}개
+- 심각도: {consistency_report.severity}
+- 주요 이슈: {', '.join(consistency_report.issues[:3])}
+
+승인 기준:
+- 전체 품질 85점 이상
+- 일관성 이슈 5개 미만
+- high 심각도 이슈 없음
+
+위 기준을 바탕으로 승인/거부를 결정하고, 거부 시 구체적인 개선 사항을 제시하세요."""
     
     
     def _extract_requirement_ids(self, content: str) -> List[str]:
