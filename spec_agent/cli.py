@@ -128,6 +128,7 @@ def generate(
                 if 'execution_time' in result:
                     click.echo(f"  • Execution Time: {result['execution_time']:.1f}s")
                 
+                
                 # 품질 결과 표시
                 quality_results = result["quality_results"]
                 avg_quality = sum(r.get('overall', 0) for r in quality_results.values()) / len(quality_results)
@@ -329,6 +330,8 @@ def agents(ctx):
     click.echo(f"   • Context passed between agents")
     click.echo(f"   • Automatic error handling and retries")
     click.echo(f"   • Quality validation at each step")
+
+
 
 
 if __name__ == "__main__":

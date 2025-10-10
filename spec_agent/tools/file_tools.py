@@ -35,15 +35,16 @@ def create_output_directory(
         }
 
 
+
 @tool
 async def write_spec_file(
-    file_path: str, content: str, filename: str
+    directory_path: str, content: str, filename: str
 ) -> Dict[str, Any]:
     """
-    Write specification content to file.
+    Write specification content to file (async version).
 
     Args:
-        file_path: Directory path where file should be written
+        directory_path: Directory path where file should be written
         content: Content to write
         filename: Name of the file
 
@@ -51,7 +52,7 @@ async def write_spec_file(
         Dictionary with write operation results
     """
     try:
-        output_path = Path(file_path) / filename
+        output_path = Path(directory_path) / filename
 
         # Ensure directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)

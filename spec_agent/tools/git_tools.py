@@ -88,11 +88,7 @@ def commit_changes(
         commit_message = f"""spec(#{frs_id.lower()}): add {service_type} spec docs
 
 Generated specification documents:
-{chr(10).join(f"- {Path(f).name}" for f in files_written)}
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"""
+{chr(10).join(f"- {Path(f).name}" for f in files_written)}"""
 
         # Commit changes
         subprocess.run(["git", "commit", "-m", commit_message], check=True)

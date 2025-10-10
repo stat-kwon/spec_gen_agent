@@ -68,19 +68,11 @@ class StrandsAgentFactory:
         # OpenAI 모델 생성
         model = OpenAIModel(**model_config)
         
-        # Strands Agent 생성 (고급 기능 활용)
+        # Strands Agent 생성
         agent = Agent(
             model=model,
             tools=tools,
-            system_prompt=system_prompt,
-            # Strands 고급 기능들
-            max_retries=max_retries,
-            timeout=self.config.strands_timeout,
-            # 메트릭 및 관찰 가능성
-            enable_tracing=True,
-            enable_metrics=enable_metrics,
-            # 에이전트별 특화 설정 적용
-            **agent_config
+            system_prompt=system_prompt
         )
         
         return agent
