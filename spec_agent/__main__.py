@@ -1,5 +1,5 @@
 """
-Entry point for the spec_agent package.
+spec_agent 패키지의 진입점.
 """
 
 import sys

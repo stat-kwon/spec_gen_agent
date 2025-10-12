@@ -1,4 +1,4 @@
-"""Template processing and validation tools."""
+"""템플릿 처리 및 검증 도구들."""
 
 import re
 from typing import Dict, Any, List
@@ -8,24 +8,31 @@ from strands import tool
 @tool
 def apply_template(content: str, template_type: str) -> Dict[str, Any]:
     """
-    Apply template structure validation and formatting.
+    템플릿 구조 검증 및 포맷팅을 적용합니다.
 
     Args:
-        content: Generated content to validate
-        template_type: Type of template (requirements, design, tasks, changes, openapi)
+        content: 검증할 생성된 컨텐츠
+        template_type: 템플릿 타입 (requirements, design, tasks, changes, openapi)
 
     Returns:
-        Dictionary with validation results and formatted content
+        검증 결과와 포맷된 컨텐츠를 담은 딕셔너리
     """
     try:
         template_structures = {
             "requirements": [
+                "헤더/메타",  # 한국어 버전도 지원
                 "Header/Meta",
-                "Scope",
+                "범위",
+                "Scope", 
+                "기능 요구사항",
                 "Functional Requirements",
+                "오류 요구사항", 
                 "Error Requirements",
+                "보안 & 개인정보",
                 "Security & Privacy",
+                "관측 가능성",
                 "Observability",
+                "수용 기준",
                 "Acceptance Criteria",
             ],
             "design": [
@@ -83,13 +90,13 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
 @tool
 def validate_markdown_structure(content: str) -> Dict[str, Any]:
     """
-    Validate markdown structure and formatting.
+    마크다운 구조와 포맷팅을 검증합니다.
 
     Args:
-        content: Markdown content to validate
+        content: 검증할 마크다운 컨텐츠
 
     Returns:
-        Dictionary with validation results
+        검증 결과를 담은 딕셔너리
     """
     try:
         issues = []

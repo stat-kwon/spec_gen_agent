@@ -1,6 +1,6 @@
 # Claude Code specific
 .claude
-#.docs
+.docs
 
 # Python virtual environments
 .venv

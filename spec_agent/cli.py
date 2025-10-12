@@ -1,5 +1,5 @@
 """
-Command-line interface for the Strands Agent SDK based spec_agent system.
+Strands Agent SDK 기반 spec_agent 시스템의 명령줄 인터페이스.
 """
 
 import sys

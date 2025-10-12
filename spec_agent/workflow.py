@@ -32,7 +32,7 @@ from .agents.spec_agents import (
     create_consistency_checker_agent,
     create_coordinator_agent,
     # Simple 버전들
-    create_tasks_agent_simple,
+    create_tasks_agent,
     create_changes_agent_simple,
     create_openapi_agent_simple
 )
@@ -93,7 +93,7 @@ class SpecificationWorkflow:
         self.agents = {
             'requirements': create_requirements_agent(self.config),  # 이미 simple 버전
             'design': create_design_agent(self.config),  # 이미 simple 버전
-            'tasks': create_tasks_agent_simple(self.config),
+            'tasks': create_tasks_agent(self.config),
             'changes': create_changes_agent_simple(self.config),
             'openapi': create_openapi_agent_simple(self.config),
             'validation': create_validation_agent(self.config),
@@ -327,7 +327,7 @@ class SpecificationWorkflow:
             
             # 초기 프롬프트 (FRS 내용)
             frs_content = self.context['project']['frs_content']
-            initial_prompt = f"FRS 내용: {frs_content[:1000]}\n\n핵심 요구사항 3개를 간단히 작성하세요."
+            initial_prompt = f"FRS 내용: {frs_content}\n\n제공된 FRS를 기반으로 상세한 기술 요구사항 문서를 생성하세요."
             
             print("🔄 Graph 실행 중 (파일 기반 컨텍스트 자동 주입)...")
             
@@ -594,7 +594,7 @@ class SpecificationWorkflow:
     
     def _build_requirements_prompt_with_feedback(self, frs_content: str) -> str:
         """피드백을 반영한 Requirements 프롬프트 생성"""
-        base_prompt = f"FRS 내용: {frs_content[:1000]}\n\n핵심 요구사항 3개를 간단히 작성하세요."
+        base_prompt = f"FRS 내용: {frs_content}\n\n제공된 FRS를 기반으로 상세한 기술 요구사항 문서를 생성하세요."
         
         # 저장된 피드백이 있으면 추가
         if hasattr(self, '_stored_feedback') and self._stored_feedback:
@@ -975,7 +975,7 @@ class SpecificationWorkflow:
         return f"""다음 FRS 문서를 분석하여 상세한 requirements.md를 생성하세요:
 
 FRS 내용:
-{frs_content[:4000]}
+{frs_content}
 
 서비스 유형: {service_type}
 
@@ -989,17 +989,17 @@ FRS 내용:
 5. 한국어로 작성"""
     
     def _build_design_prompt(self, requirements_result: Dict, service_type: str) -> str:
-        """설계 에이전트 프롬프트"""
-        req_content = self._extract_content_from_result(requirements_result)[:3000]
+        """설계 에이전트 프롬프트 - FRS 기반으로만 생성"""
+        frs_content = self.context['project']['frs_content']
         
-        return f"""다음 요구사항을 바탕으로 상세한 design.md를 생성하세요:
+        return f"""다음 FRS를 바탕으로 design.md를 생성하세요 (Requirements 내용은 제외):
 
-요구사항:
-{req_content}
+FRS 내용:
+{frs_content}
 
 서비스 유형: {service_type}
 
-요구사항:
+**중요**: Requirements 섹션(REQ-001 등)은 절대 포함하지 마세요. 오직 Design 관련 섹션만 작성하세요:
 1. 시스템 아키텍처 설계
 2. Mermaid 시퀀스 다이어그램 포함 (```mermaid 블록)
 3. 데이터 모델 정의
@@ -1008,15 +1008,15 @@ FRS 내용:
 6. 한국어로 작성"""
     
     def _build_tasks_prompt(self, design_result: Dict) -> str:
-        """작업 에이전트 프롬프트"""
-        design_content = self._extract_content_from_result(design_result)[:3000]
+        """작업 에이전트 프롬프트 - FRS 기반으로만 생성"""
+        frs_content = self.context['project']['frs_content']
         
-        return f"""다음 설계를 바탕으로 상세한 tasks.md를 생성하세요:
+        return f"""다음 FRS를 바탕으로 tasks.md를 생성하세요 (Requirements/Design 내용은 제외):
 
-설계:
-{design_content}
+FRS 내용:
+{frs_content}
 
-요구사항:
+**중요**: Requirements나 Design 섹션은 포함하지 마세요. 오직 Tasks 관련 내용만 작성하세요:
 1. Epic/Story/Task 계층 구조
 2. 각 작업에 대한 명확한 설명
 3. 예상 시간 및 우선순위
@@ -1025,12 +1025,17 @@ FRS 내용:
 6. 한국어로 작성"""
     
     def _build_changes_prompt(self, service_type: str) -> str:
-        """변경사항 에이전트 프롬프트"""
-        return f"""프로젝트 배포를 위한 상세한 changes.md를 생성하세요:
+        """변경사항 에이전트 프롬프트 - FRS 기반으로만 생성"""
+        frs_content = self.context['project']['frs_content']
+        
+        return f"""다음 FRS를 바탕으로 changes.md를 생성하세요 (Requirements/Design 내용은 제외):
+
+FRS 내용:
+{frs_content}
 
 서비스 유형: {service_type}
 
-요구사항:
+**중요**: Requirements나 Design 섹션은 포함하지 마세요. 오직 Changes 관련 내용만 작성하세요:
 1. 버전 이력
 2. 변경 사항 요약
 3. 영향도 및 위험 분석
@@ -1039,17 +1044,15 @@ FRS 내용:
 6. 한국어로 작성"""
     
     def _build_openapi_prompt(self, requirements_result: Dict, design_result: Dict) -> str:
-        """OpenAPI 에이전트 프롬프트"""
-        req_content = self._extract_content_from_result(requirements_result)[:2000]
-        design_content = self._extract_content_from_result(design_result)[:2000]
+        """OpenAPI 에이전트 프롬프트 - FRS 기반으로만 생성"""
+        frs_content = self.context['project']['frs_content']
         
-        return f"""OpenAPI 3.1 명세를 JSON 형식으로 생성하세요:
+        return f"""다음 FRS를 바탕으로 OpenAPI 3.1 명세를 생성하세요:
 
-요구사항:
-{req_content}
+FRS 내용:
+{frs_content}
 
-설계:
-{design_content}
+**중요**: Requirements나 Design 내용은 포함하지 마세요. 오직 API 명세만 작성하세요:
 
 요구사항:
 1. 유효한 JSON 형식 (마크다운 블록 없이)

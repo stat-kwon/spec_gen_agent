@@ -1,4 +1,4 @@
-"""Git workflow management tools."""
+"""Git 워크플로우 관리 도구들."""
 
 import subprocess
 import re
@@ -12,15 +12,15 @@ def create_git_branch(
     frs_id: str, service_type: str, base_branch: str = "main"
 ) -> Dict[str, Any]:
     """
-    Create a git branch following the naming convention.
+    명명 규칙에 따라 Git 브랜치를 생성합니다.
 
     Args:
-        frs_id: FRS identifier (e.g., "FRS-1")
-        service_type: Service type ("api" or "web")
-        base_branch: Base branch to create from (default: "main")
+        frs_id: FRS 식별자 (예: "FRS-1")
+        service_type: 서비스 타입 ("api" 또는 "web")
+        base_branch: 기준 브랜치 (기본값: "main")
 
     Returns:
-        Dictionary with branch creation results
+        브랜치 생성 결과를 담은 딕셔너리
     """
     try:
         # Generate branch name following convention: specgen/scenario-3/<frs-id>-<service>
@@ -63,15 +63,15 @@ def commit_changes(
     frs_id: str, service_type: str, files_written: list
 ) -> Dict[str, Any]:
     """
-    Commit generated specification files following the commit message convention.
+    커밋 메시지 규칙에 따라 생성된 명세서 파일들을 커밋합니다.
 
     Args:
-        frs_id: FRS identifier (e.g., "FRS-1")
-        service_type: Service type ("api" or "web")
-        files_written: List of file paths that were written
+        frs_id: FRS 식별자 (예: "FRS-1")
+        service_type: 서비스 타입 ("api" 또는 "web")
+        files_written: 작성된 파일 경로 목록
 
     Returns:
-        Dictionary with commit results
+        커밋 결과를 담은 딕셔너리
     """
     try:
         if not files_written:
@@ -116,10 +116,10 @@ Generated specification documents:
 @tool
 def get_git_status() -> Dict[str, Any]:
     """
-    Get current git repository status.
+    현재 Git 저장소의 상태를 가져옵니다.
 
     Returns:
-        Dictionary with git status information
+        Git 상태 정보를 담은 딕셔너리
     """
     try:
         # Get current branch

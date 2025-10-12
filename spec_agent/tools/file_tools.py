@@ -1,4 +1,4 @@
-"""File I/O and directory management tools."""
+"""파일 I/O 및 디렉터리 관리 도구들."""
 
 import json
 import aiofiles
@@ -12,15 +12,15 @@ def create_output_directory(
     base_path: str, frs_id: str, service_type: str
 ) -> Dict[str, Any]:
     """
-    Create output directory structure for generated specifications.
+    생성된 명세서를 위한 출력 디렉토리 구조를 생성합니다.
 
     Args:
-        base_path: Base directory path (e.g., "specs")
-        frs_id: FRS identifier (e.g., "FRS-1")
-        service_type: Service type ("api" or "web")
+        base_path: 기본 디렉토리 경로 (예: "specs")
+        frs_id: FRS 식별자 (예: "FRS-1")
+        service_type: 서비스 타입 ("api" 또는 "web")
 
     Returns:
-        Dictionary with directory creation results
+        디렉토리 생성 결과를 담은 딕셔너리
     """
     try:
         output_dir = Path(base_path) / frs_id / service_type
@@ -41,15 +41,15 @@ async def write_spec_file(
     directory_path: str, content: str, filename: str
 ) -> Dict[str, Any]:
     """
-    Write specification content to file (async version).
+    명세서 컨텐츠를 파일로 작성합니다 (비동기 버전).
 
     Args:
-        directory_path: Directory path where file should be written
-        content: Content to write
-        filename: Name of the file
+        directory_path: 파일을 작성할 디렉토리 경로
+        content: 작성할 컨텐츠
+        filename: 파일명
 
     Returns:
-        Dictionary with write operation results
+        쓰기 작업 결과를 담은 딕셔너리
     """
     try:
         output_path = Path(directory_path) / filename
@@ -85,13 +85,13 @@ async def write_spec_file(
 @tool
 async def read_spec_file(file_path: str) -> Dict[str, Any]:
     """
-    Read specification file content.
+    명세서 파일 컨텐츠를 읽습니다.
 
     Args:
-        file_path: Full path to the file
+        file_path: 파일의 전체 경로
 
     Returns:
-        Dictionary with file content and metadata
+        파일 컨텐츠와 메타데이터를 담은 딕셔너리
     """
     try:
         path = Path(file_path)
@@ -116,13 +116,13 @@ async def read_spec_file(file_path: str) -> Dict[str, Any]:
 @tool
 def list_spec_files(directory_path: str) -> Dict[str, Any]:
     """
-    List all specification files in a directory.
+    디렉토리의 모든 명세서 파일을 나열합니다.
 
     Args:
-        directory_path: Path to the directory
+        directory_path: 디렉토리 경로
 
     Returns:
-        Dictionary with file listing
+        파일 목록을 담은 딕셔너리
     """
     try:
         path = Path(directory_path)

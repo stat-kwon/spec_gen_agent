@@ -1,4 +1,4 @@
-"""Strands Agent SDK based agents for specification generation."""
+"""명세서 생성을 위한 Strands Agent SDK 기반 에이전트들."""
 
 from .spec_agents import (
     create_requirements_agent,

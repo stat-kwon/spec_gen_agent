@@ -1,4 +1,4 @@
-"""Tools for the Strands Agent SDK based spec_agent system."""
+"""Strands Agent SDK 기반 spec_agent 시스템용 도구들."""
 
 from .frs_tools import load_frs_document, extract_frs_metadata
 from .template_tools import apply_template, validate_markdown_structure

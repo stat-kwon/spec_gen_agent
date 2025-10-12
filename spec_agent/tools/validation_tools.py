@@ -1,4 +1,4 @@
-"""Validation tools for generated specifications."""
+"""생성된 명세서를 위한 검증 도구들."""
 
 import json
 import re
@@ -10,13 +10,13 @@ from strands import tool
 @tool
 def validate_openapi_spec(openapi_content: str) -> Dict[str, Any]:
     """
-    Validate OpenAPI 3.1 specification.
+    OpenAPI 3.1 명세서를 검증합니다.
 
     Args:
-        openapi_content: JSON string containing OpenAPI specification
+        openapi_content: OpenAPI 명세서를 담은 JSON 문자열
 
     Returns:
-        Dictionary with validation results
+        검증 결과를 담은 딕셔너리
     """
     try:
         # Parse JSON
@@ -76,14 +76,14 @@ def validate_openapi_spec(openapi_content: str) -> Dict[str, Any]:
 @tool
 def validate_markdown_content(content: str, document_type: str) -> Dict[str, Any]:
     """
-    Validate markdown content structure and quality.
+    마크다운 컨텐츠의 구조와 품질을 검증합니다.
 
     Args:
-        content: Markdown content to validate
-        document_type: Type of document (requirements, design, tasks, changes)
+        content: 검증할 마크다운 컨텐츠
+        document_type: 문서 타입 (requirements, design, tasks, changes)
 
     Returns:
-        Dictionary with validation results
+        검증 결과를 담은 딕셔너리
     """
     try:
         issues = []
@@ -179,13 +179,13 @@ def generate_validation_report(
     validation_results: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
-    Generate a comprehensive validation report from multiple validation results.
+    여러 검증 결과로부터 포괄적인 검증 보고서를 생성합니다.
 
     Args:
-        validation_results: List of validation result dictionaries
+        validation_results: 검증 결과 딕셔너리의 리스트
 
     Returns:
-        Dictionary with consolidated validation report
+        통합된 검증 보고서를 담은 딕셔너리
     """
     try:
         total_files = len(validation_results)

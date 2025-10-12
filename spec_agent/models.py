@@ -1,4 +1,4 @@
-"""Data models for the spec_agent system."""
+"""spec_agent 시스템용 데이터 모델."""
 
 from enum import Enum
 from typing import Dict, Any, Optional, List
@@ -6,14 +6,14 @@ from pydantic import BaseModel, Field
 
 
 class ServiceType(Enum):
-    """Service type enumeration."""
+    """서비스 타입 열거형."""
 
     API = "api"
     WEB = "web"
 
 
 class FRSDocument(BaseModel):
-    """FRS document model."""
+    """FRS 문서 모델."""
 
     title: str
     content: str
@@ -21,7 +21,7 @@ class FRSDocument(BaseModel):
 
 
 class GenerationContext(BaseModel):
-    """Context for document generation."""
+    """문서 생성을 위한 컨텍스트."""
 
     frs: FRSDocument
     service_type: ServiceType
@@ -34,7 +34,7 @@ class GenerationContext(BaseModel):
 
 
 class ValidationResult(BaseModel):
-    """Result of document validation."""
+    """문서 검증 결과."""
 
     success: bool
     errors: List[str] = Field(default_factory=list)
@@ -43,7 +43,7 @@ class ValidationResult(BaseModel):
 
 
 class GenerationResult(BaseModel):
-    """Result of document generation."""
+    """문서 생성 결과."""
 
     success: bool
     content: Optional[str] = None
@@ -53,7 +53,7 @@ class GenerationResult(BaseModel):
 
 
 class DocumentState(Enum):
-    """Document generation state for Agentic Loop."""
+    """Agentic Loop을 위한 문서 생성 상태."""
 
     DRAFT = "draft"
     REVIEWING = "reviewing"
@@ -62,7 +62,7 @@ class DocumentState(Enum):
 
 
 class QualityMetrics(BaseModel):
-    """Quality metrics for document evaluation."""
+    """문서 평가를 위한 품질 메트릭."""
 
     completeness: float = Field(default=0.0, ge=0.0, le=100.0)
     consistency: float = Field(default=0.0, ge=0.0, le=100.0)
@@ -71,7 +71,7 @@ class QualityMetrics(BaseModel):
     overall: float = Field(default=0.0, ge=0.0, le=100.0)
 
     def calculate_overall(self) -> float:
-        """Calculate weighted overall score."""
+        """가중 전체 점수 계산."""
         self.overall = (
             self.completeness * 0.3
             + self.consistency * 0.3
@@ -82,7 +82,7 @@ class QualityMetrics(BaseModel):
 
 
 class ValidationFeedback(BaseModel):
-    """Feedback from validation and consistency checks."""
+    """검증 및 일관성 검사에서 나온 피드백."""
 
     document_type: str
     issues: List[str] = Field(default_factory=list)

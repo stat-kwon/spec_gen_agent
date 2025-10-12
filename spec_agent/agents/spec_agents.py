@@ -113,23 +113,51 @@ class StrandsAgentFactory:
 
 
 def create_requirements_agent(config: Config) -> Agent:
-    """Simple requirements 에이전트 - 빠른 테스트용 (피드백 반영 기능 추가)"""
+    """
+    Strands SDK의 고급 기능을 활용한 요구사항 생성 에이전트 생성.
+    (.bk 버전의 상세 프롬프트 + 피드백 반영 기능)
+
+    Returns:
+        향상된 요구사항 생성 Strands Agent
+    """
     factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 요구사항을 작성하는 에이전트입니다.
+    prompt = """당신은 기능 요구사항 명세서(FRS)를 상세한 기술 요구사항 문서로 변환하는 기술 요구사항 분석가입니다.
 
-FRS 내용을 보고 핵심 요구사항 3개만 간단히 작성하세요:
+**STEP 1**: 먼저 load_frs_document()를 호출하여 FRS 문서를 로드하세요. success가 True인지 확인하고 content를 얻으세요.
+**STEP 2**: 로드가 성공했다면, FRS content의 모든 기능 요구사항을 분석하세요.
+**STEP 3**: 다음 7개 섹션 구조를 모두 포함하여 완전한 문서를 생성하세요:
 
-형식:
-- REQ-001: [요구사항 1줄 설명]
-- REQ-002: [요구사항 1줄 설명] 
-- REQ-003: [요구사항 1줄 설명]
+# 헤더/메타
+문서 제목, 버전, 서비스 유형, 생성 일시 포함
 
-간단하고 명확하게 작성하세요.
+# 범위  
+시스템 경계, 인터페이스, 범위 내/외 항목, 가정/제약사항 포함
+
+# 기능 요구사항
+FRS를 기반으로 최소 5개 이상의 요구사항을 다음 형식으로 작성:
+## REQ-001: [제목]
+- **설명**: [상세 설명]
+- **우선순위**: [높음/중간/낮음]
+- **종속성**: [관련 REQ-ID 또는 없음]
+- **수용 기준**: [테스트 가능한 기준]
+
+# 오류 요구사항
+HTTP 상태 코드, 오류 처리, 로깅 요구사항 포함
+
+# 보안 & 개인정보
+인증, 권한, 데이터 보호, GDPR 준수 요구사항 포함
+
+# 관측 가능성
+모니터링, 로깅, 메트릭, 경보 설정 요구사항 포함
+
+# 수용 기준
+테스트 시나리오, 성능/보안 기준, 품질 게이트 포함
 
 IMPORTANT: 
-1. 만약 coordinator의 개선 요청이 있다면 반드시 반영하세요.
-2. Design 에이전트의 피드백도 고려하세요.
-3. 이전보다 더 구체적이고 완성도 높은 요구사항을 작성하세요."""
+1. 반드시 load_frs_document를 먼저 호출하여 FRS 내용을 확인하세요
+2. 로드된 FRS의 모든 기능 요구사항을 반영하세요 (User Registration, Authentication, Profile Management, Authorization 등)
+3. 모든 7개 섹션을 포함하고, 각 섹션에 실질적인 내용을 작성하세요
+4. 피드백이 있으면 해당 섹션을 개선하되 전체 구조는 유지하세요"""
 
     return factory.create_enhanced_agent(
         agent_type="requirements",
@@ -139,55 +167,126 @@ IMPORTANT:
             extract_frs_metadata,
             apply_template,
             validate_markdown_structure,
+            validate_markdown_content,
         ]
     )
 
 
 def create_design_agent(config: Config) -> Agent:
-    """Simple design 에이전트 - 빠른 테스트용 (컨텍스트 자동 수신)"""
+    """
+    Strands SDK의 고급 기능을 활용한 설계 생성 에이전트 생성.
+
+    Returns:
+        향상된 설계 생성 Strands Agent
+    """
     factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 설계를 작성하는 에이전트입니다.
+    prompt = """당신은 요구사항 명세서로부터 상세한 기술 설계 문서를 작성하는 시니어 소프트웨어 아키텍트입니다.
 
-주어진 입력에서 요구사항을 찾아서 2-3줄로 간단한 아키텍처를 설명하세요.
+**중요**: 당신은 DESIGN 문서만 작성합니다. Requirements 내용(REQ-001, REQ-002 등)은 절대 포함하지 마세요.
 
-형식:
+당신의 작업은 제공된 요구사항을 분석하고 다음의 정확한 구조를 따르는 design.md 문서를 생성하는 것입니다:
+
 ## 아키텍처
-- [간단한 아키텍처 설명 1줄]
-- [기술 스택 1줄]
+- 상위 레벨 시스템 아키텍처
+- 컴포넌트 개요 및 책임
+- 기술 스택 결정
+- 통합 패턴
 
-## 검토 의견
-요구사항에 대한 간단한 피드백이 있다면 작성하세요.
+## 시퀀스 다이어그램
+- Mermaid 구문을 사용하여 상세한 시퀀스 다이어그램 생성
+- 모든 주요 사용자 흐름과 시스템 상호작용 표시
+- 오류 처리 흐름 포함
+- 형식: ```mermaid sequenceDiagram ... ```
 
-IMPORTANT: 입력에 포함된 모든 정보를 활용하여 설계하세요."""
+## 데이터 모델
+- 엔티티 정의 및 관계
+- 데이터 흐름 설명
+- 저장 요구사항
+- 데이터 검증 규칙
+
+## API 계약
+- 상세한 API 명세
+- 요청/응답 형식
+- 상태 코드 및 오류 처리
+- 인증 및 권한 부여
+
+## 보안 & 권한
+- 보안 아키텍처
+- 권한 모델
+- 데이터 보호 조치
+- 보안 제어 구현
+
+## 성능 목표
+- 성능 목표 및 SLA
+- 확장성 요구사항
+- 리소스 활용 목표
+- 부하 처리 전략
+
+구현 가능하고, 확장 가능하며, 유지 보수가 가능한 설계를 만드는 데 집중하세요. 시스템 상호작용을 명확하게 보여주는 상세한 시퀀스 다이어그램을 포함하세요.
+
+**절대 포함하지 말 것**:
+- Requirements 섹션 (REQ-001, REQ-002 등)
+- 헤더/메타 정보
+- 범위 정의
+- 오류 요구사항
+- 수용 기준
+- 기능 요구사항 목록
+
+**오직 Design 관련 내용만** 작성하세요."""
 
     return factory.create_enhanced_agent(
         agent_type="design",
         system_prompt=prompt,
         tools=[apply_template, validate_markdown_structure],
-        temperature=0.3  # 간단하고 일관된 응답을 위해
+        temperature=0.6  # 창의적 설계를 위해 약간 높은 temperature
     )
 
 
-def create_tasks_agent_simple(config: Config) -> Agent:
-    """Simple tasks 에이전트 - 빠른 테스트용 (컨텍스트 자동 수신)"""
+def create_tasks_agent(config: Config) -> Agent:
+    """
+    Strands SDK의 고급 기능을 활용한 작업 분해 에이전트 생성.
+
+    Returns:
+        향상된 작업 생성 Strands Agent
+    """
     factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 작업 분해를 하는 에이전트입니다.
+    prompt = """당신은 기술 설계를 실행 가능한 개발 작업으로 분해하는 애자일 프로젝트 관리자입니다.
 
-주어진 입력에서 설계 내용을 찾아서 핵심 작업 3개만 간단히 작성하세요:
+당신의 작업은 제공된 설계 문서를 분석하고 상세한 Epic/Story/Task 분해를 포함한 포괄적인 tasks.md 문서를 생성하는 것입니다.
 
-형식:
-## 작업 분해
-- TASK-001: [작업 1줄 설명]
-- TASK-002: [작업 1줄 설명]
-- TASK-003: [작업 1줄 설명]
+다음 형식의 구조화된 테이블을 생성하세요:
 
-IMPORTANT: 입력에 포함된 모든 정보(FRS + 이전 노드 결과)를 활용하여 작업을 분해하세요."""
+## 에픽
+| 에픽 ID | 제목 | 설명 | 비즈니스 가치 | 수용 기준 |
+|---------|-------|-------------|----------------|-------------------|
+| E-001   | ...   | ...         | ...            | ...               |
+
+## 스토리
+| 스토리 ID | 에픽 ID | 제목 | 설명 | 수용 기준 | 스토리 포인트 | 우선순위 |
+|----------|---------|-------|-------------|-------------------|--------------|----------|
+| S-001    | E-001   | ...   | ...         | ...               | 5            | 높음     |
+
+## 태스크
+| 태스크 ID | 스토리 ID | 제목 | 설명 | 담당자 | 예상 시간 | 종속성 |
+|---------|----------|-------|-------------|----------|----------|--------------|
+| T-001   | S-001    | ...   | ...         | Dev      | 4h       | 없음         |
+
+## DoD (완료 정의)
+다음을 포함한 포괄적인 체크리스트를 작성하세요:
+- [ ] 코드 구현 완료
+- [ ] 단위 테스트 작성 및 통과
+- [ ] 통합 테스트 통과
+- [ ] 코드 리뷰 완료
+- [ ] 문서 업데이트
+- [ ] 보안 검토 완료
+- [ ] 성능 테스트 완료
+
+개발 팀 멤버에게 직접 할당할 수 있는 세분화되고 실행 가능한 작업을 만드는 데 집중하세요."""
 
     return factory.create_enhanced_agent(
         agent_type="tasks",
         system_prompt=prompt,
-        tools=[apply_template],
-        temperature=0.2
+        tools=[apply_template, validate_markdown_structure]
     )
 
 
@@ -196,7 +295,9 @@ def create_changes_agent_simple(config: Config) -> Agent:
     factory = StrandsAgentFactory(config)
     prompt = """당신은 간단한 변경 관리를 하는 에이전트입니다.
 
-주어진 입력에서 작업 분해 내용을 찾아서 핵심 변경사항 정보만 간단히 작성하세요:
+**중요**: 당신은 CHANGES 문서만 작성합니다. Requirements나 Design 내용은 절대 포함하지 마세요.
+
+FRS 정보를 바탕으로 핵심 변경사항 정보만 간단히 작성하세요:
 
 형식:
 ## 변경 요약
@@ -204,7 +305,11 @@ def create_changes_agent_simple(config: Config) -> Agent:
 - 배포 방식: [1줄 설명]
 - 위험도: [낮음/중간/높음]
 
-IMPORTANT: 입력에 포함된 모든 정보(FRS + 이전 노드 결과)를 활용하여 변경 관리 계획을 작성하세요."""
+**절대 포함하지 말 것**:
+- Requirements 섹션 (REQ-001 등)
+- Design 아키텍처
+- 기능 요구사항 목록
+- API 명세"""
 
     return factory.create_enhanced_agent(
         agent_type="changes",
@@ -219,7 +324,9 @@ def create_openapi_agent_simple(config: Config) -> Agent:
     factory = StrandsAgentFactory(config)
     prompt = """당신은 간단한 API 명세를 작성하는 에이전트입니다.
 
-주어진 입력에서 모든 정보를 찾아서 핵심 API 엔드포인트 3개만 간단히 작성하세요:
+**중요**: 당신은 API 명세만 작성합니다. Requirements나 Design 내용은 절대 포함하지 마세요.
+
+FRS를 바탕으로 핵심 API 엔드포인트만 간단히 작성하세요:
 
 형식:
 ## API 엔드포인트
@@ -227,7 +334,11 @@ def create_openapi_agent_simple(config: Config) -> Agent:
 - POST /auth/login - 로그인
 - GET /users/profile - 프로필 조회
 
-IMPORTANT: 입력에 포함된 모든 정보(FRS + 이전 노드 결과)를 활용하여 API 명세를 작성하세요."""
+**절대 포함하지 말 것**:
+- Requirements 섹션 (REQ-001 등)
+- Design 아키텍처
+- 변경 관리 정보
+- Tasks 정보"""
 
     return factory.create_enhanced_agent(
         agent_type="openapi",

@@ -1,4 +1,4 @@
-"""FRS document loading and processing tools."""
+"""FRS 문서 로딩 및 처리 도구들."""
 
 import re
 from pathlib import Path
@@ -17,20 +17,39 @@ FRSDocument = models_module.FRSDocument
 
 
 @tool
-def load_frs_document(frs_path: str) -> Dict[str, Any]:
+def load_frs_document(frs_path: str = "specs/FRS-1.md") -> Dict[str, Any]:
     """
-    Load and parse an FRS markdown document.
+    FRS 마크다운 문서를 로드하고 파싱합니다.
 
     Args:
-        frs_path: Path to the FRS markdown file
+        frs_path: FRS 마크다운 파일 경로 (기본값: specs/FRS-1.md)
 
     Returns:
-        Dictionary containing FRS document data
+        FRS 문서 데이터를 담은 딕셔너리
     """
     try:
+        # 현재 작업 디렉토리를 기준으로 경로 해석
         path = Path(frs_path)
+        
+        # 상대 경로인 경우 현재 작업 디렉토리 기준으로 절대 경로로 변환
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        
+        # 파일 존재 여부 확인 및 디버깅 정보 포함
         if not path.exists():
-            raise FileNotFoundError(f"FRS file not found: {frs_path}")
+            # 대안 경로들 시도
+            alternative_paths = [
+                Path.cwd() / "specs/FRS-1.md",
+                Path.cwd() / "spec_agent" / "specs/FRS-1.md",
+                Path(frs_path)
+            ]
+            
+            for alt_path in alternative_paths:
+                if alt_path.exists():
+                    path = alt_path
+                    break
+            else:
+                raise FileNotFoundError(f"FRS file not found at {path}. Tried: {[str(p) for p in alternative_paths]}")
 
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -54,22 +73,23 @@ def load_frs_document(frs_path: str) -> Dict[str, Any]:
             "frs": frs_doc.model_dump(),
             "content": content,
             "title": title,
+            "debug_info": f"Successfully loaded from: {path}"
         }
 
     except Exception as e:
-        return {"success": False, "error": f"Failed to load FRS document: {str(e)}"}
+        return {"success": False, "error": f"Failed to load FRS document: {str(e)}", "attempted_path": str(path) if 'path' in locals() else frs_path}
 
 
 @tool
 def extract_frs_metadata(frs_content: str) -> Dict[str, Any]:
     """
-    Extract metadata from FRS content.
+    FRS 컨텐츠에서 메타데이터를 추출합니다.
 
     Args:
-        frs_content: Raw FRS markdown content
+        frs_content: 원시 FRS 마크다운 컨텐츠
 
     Returns:
-        Dictionary containing extracted metadata
+        추출된 메타데이터를 담은 딕셔너리
     """
     try:
         metadata = {}
