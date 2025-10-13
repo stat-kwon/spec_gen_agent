@@ -3,6 +3,8 @@
 복잡한 state 관리 없이 필요한 기능만 포함
 """
 
+
+import inspect
 import logging
 from typing import Dict, Any, Optional, List
 from pathlib import Path
@@ -72,6 +74,19 @@ class SpecificationWorkflow:
         self._agent_loggers: Dict[str, logging.LoggerAdapter] = {}
 
         self.logger.info("워크플로우 초기화 완료")
+
+    def _tool_kwargs(self, tool_fn):
+        """도구 함수 호출 시 session_id 지원 여부에 따라 kwargs 제공"""
+
+        try:
+            signature = inspect.signature(tool_fn)
+        except (TypeError, ValueError):
+            return {}
+
+        if "session_id" in signature.parameters:
+            return {"session_id": self.session_id}
+
+        return {}
     
     def _initialize_agents(self):
         """에이전트 초기화"""
@@ -79,11 +94,11 @@ class SpecificationWorkflow:
 
         # 기본 문서 생성 에이전트들
         self.agents = {
-            'requirements': create_requirements_agent(self.config),
-            'design': create_design_agent(self.config),
-            'tasks': create_tasks_agent(self.config),
-            'changes': create_changes_agent(self.config),
-            'openapi': create_openapi_agent(self.config)
+            'requirements': create_requirements_agent(self.config, session_id=self.session_id),
+            'design': create_design_agent(self.config, session_id=self.session_id),
+            'tasks': create_tasks_agent(self.config, session_id=self.session_id),
+            'changes': create_changes_agent(self.config, session_id=self.session_id),
+            'openapi': create_openapi_agent(self.config, session_id=self.session_id)
         }
 
         self._agent_loggers = {
@@ -179,7 +194,10 @@ class SpecificationWorkflow:
     ):
         """프로젝트 정보 초기화"""
         # FRS 로드
-        frs_result = load_frs_document(frs_path)
+        frs_result = load_frs_document(
+            frs_path,
+            **self._tool_kwargs(load_frs_document),
+        )
         if not frs_result.get("success"):
             raise ValueError(f"FRS 로드 실패: {frs_path}")
         
@@ -205,7 +223,11 @@ class SpecificationWorkflow:
         frs_id = self.context['project']['frs_id']
         service_type = self.context['project']['service_type']
         
-        git_result = create_git_branch(frs_id, service_type)
+        git_result = create_git_branch(
+            frs_id,
+            service_type,
+            **self._tool_kwargs(create_git_branch),
+        )
         if git_result.get("success"):
             self.logger.info("Git 브랜치 생성 완료 | 이름: %s", git_result.get('branch_name'))
         else:
@@ -488,9 +510,16 @@ Output pure JSON only - no text before or after."""
 
         try:
             if agent_name == 'openapi':
-                template_result = validate_openapi_spec(content)
+                template_result = validate_openapi_spec(
+                    content,
+                    **self._tool_kwargs(validate_openapi_spec),
+                )
             else:
-                template_result = apply_template(content, template_type)
+                template_result = apply_template(
+                    content,
+                    template_type,
+                    **self._tool_kwargs(apply_template),
+                )
         except Exception:
             agent_logger.exception("템플릿 검증 도구 호출 실패")
             raise
@@ -533,7 +562,12 @@ Output pure JSON only - no text before or after."""
                 filename = f'{agent_name}.md'
             
             # 파일 저장
-            result = await write_spec_file(output_dir, content, filename)
+            result = await write_spec_file(
+                output_dir,
+                content,
+                filename,
+                **self._tool_kwargs(write_spec_file),
+            )
 
             if result.get("success"):
                 file_info = {
@@ -830,7 +864,12 @@ Output pure JSON only - no text before or after."""
         frs_id = self.context['project']['frs_id']
         service_type = self.context['project']['service_type']
         
-        result = commit_changes(frs_id, service_type, files_written)
+        result = commit_changes(
+            frs_id,
+            service_type,
+            files_written,
+            **self._tool_kwargs(commit_changes),
+        )
 
         if result.get("success"):
             self.logger.info(

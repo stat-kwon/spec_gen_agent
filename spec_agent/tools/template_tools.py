@@ -1,13 +1,33 @@
 """템플릿 처리 및 검증 도구들."""
 
+from __future__ import annotations
+
 import json
+import logging
 import re
 from typing import Dict, Any, List
+
 from strands import tool
+
+from ..logging_utils import get_session_logger
+
+
+LOGGER = logging.getLogger("spec_agent.tools.template")
+
+
+def _get_logger(session_id: str | None = None) -> logging.LoggerAdapter | logging.Logger:
+    if session_id:
+        return get_session_logger("tools.template", session_id)
+    return LOGGER
 
 
 @tool
-def apply_template(content: str, template_type: str) -> Dict[str, Any]:
+def apply_template(
+    content: str,
+    template_type: str,
+    *,
+    session_id: str | None = None,
+) -> Dict[str, Any]:
     """
     템플릿 구조 검증 및 포맷팅을 적용합니다.
 
@@ -18,6 +38,9 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
     Returns:
         검증 결과와 포맷된 컨텐츠를 담은 딕셔너리
     """
+    logger = _get_logger(session_id)
+    logger.info("템플릿 검증 시작 | 타입=%s", template_type)
+
     try:
         template_structures = {
             "requirements": [
@@ -60,6 +83,7 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
             try:
                 parsed = json.loads(content)
             except json.JSONDecodeError as exc:
+                logger.error("OpenAPI JSON 파싱 실패 | 오류=%s", exc.msg)
                 return {
                     "success": False,
                     "error": f"Invalid JSON: {exc.msg}",
@@ -79,7 +103,7 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
             total_fields = len(required_fields)
             compliance = (total_fields - len(missing_fields)) / total_fields if total_fields else 1.0
 
-            return {
+            result = {
                 "success": len(missing_fields) == 0,
                 "content": content,
                 "template_type": template_type,
@@ -89,8 +113,14 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
                 "missing_sections": missing_fields,
                 "compliance_score": compliance,
             }
+            logger.info(
+                "OpenAPI 템플릿 검증 완료 | 누락=%d",
+                len(missing_fields),
+            )
+            return result
 
         if template_type not in template_structures:
+            logger.error("알 수 없는 템플릿 타입 | 타입=%s", template_type)
             return {
                 "success": False,
                 "error": f"Unknown template type: {template_type}",
@@ -125,7 +155,7 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
         # Extract existing sections
         found_sections = re.findall(r"^#{1,3}\s+(.+)$", content, re.MULTILINE)
 
-        return {
+        result = {
             "success": len(missing_sections) == 0,
             "content": content,
             "template_type": template_type,
@@ -135,13 +165,24 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
             "compliance_score": (len(section_pairs) - len(missing_sections))
             / len(section_pairs),
         }
+        logger.info(
+            "템플릿 검증 완료 | 타입=%s | 누락=%d",
+            template_type,
+            len(missing_sections),
+        )
+        return result
 
     except Exception as e:
+        logger.exception("템플릿 검증 실패")
         return {"success": False, "error": f"Template application failed: {str(e)}"}
 
 
 @tool
-def validate_markdown_structure(content: str) -> Dict[str, Any]:
+def validate_markdown_structure(
+    content: str,
+    *,
+    session_id: str | None = None,
+) -> Dict[str, Any]:
     """
     마크다운 구조와 포맷팅을 검증합니다.
 
@@ -151,6 +192,9 @@ def validate_markdown_structure(content: str) -> Dict[str, Any]:
     Returns:
         검증 결과를 담은 딕셔너리
     """
+    logger = _get_logger(session_id)
+    logger.info("마크다운 구조 검증 시작")
+
     try:
         issues = []
         warnings = []
@@ -185,7 +229,7 @@ def validate_markdown_structure(content: str) -> Dict[str, Any]:
             if not code.strip():
                 warnings.append(f"Empty code block found (language: {lang or 'none'})")
 
-        return {
+        result = {
             "success": len(issues) == 0,
             "issues": issues,
             "warnings": warnings,
@@ -193,6 +237,13 @@ def validate_markdown_structure(content: str) -> Dict[str, Any]:
             "list_item_count": len(list_items),
             "code_block_count": len(code_blocks),
         }
+        logger.info(
+            "마크다운 구조 검증 완료 | 이슈=%d | 경고=%d",
+            len(issues),
+            len(warnings),
+        )
+        return result
 
     except Exception as e:
+        logger.exception("마크다운 구조 검증 실패")
         return {"success": False, "error": f"Markdown validation failed: {str(e)}"}

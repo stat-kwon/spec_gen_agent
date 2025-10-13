@@ -1,12 +1,18 @@
 """FRS 문서 로딩 및 처리 도구들."""
 
+from __future__ import annotations
+
+import logging
+import os
 import re
-from pathlib import Path
-from typing import Dict, Any
-from strands import tool
 import importlib.util
 import sys
-import os
+from pathlib import Path
+from typing import Dict, Any
+
+from strands import tool
+
+from ..logging_utils import get_session_logger
 
 # models.py 직접 로드
 models_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models.py')
@@ -16,8 +22,21 @@ spec.loader.exec_module(models_module)
 FRSDocument = models_module.FRSDocument
 
 
+LOGGER = logging.getLogger("spec_agent.tools.frs")
+
+
+def _get_logger(session_id: str | None = None) -> logging.LoggerAdapter | logging.Logger:
+    if session_id:
+        return get_session_logger("tools.frs", session_id)
+    return LOGGER
+
+
 @tool
-def load_frs_document(frs_path: str = "specs/FRS-1.md") -> Dict[str, Any]:
+def load_frs_document(
+    frs_path: str = "specs/FRS-1.md",
+    *,
+    session_id: str | None = None,
+) -> Dict[str, Any]:
     """
     FRS 마크다운 문서를 로드하고 파싱합니다.
 
@@ -27,6 +46,9 @@ def load_frs_document(frs_path: str = "specs/FRS-1.md") -> Dict[str, Any]:
     Returns:
         FRS 문서 데이터를 담은 딕셔너리
     """
+    logger = _get_logger(session_id)
+    logger.info("FRS 로드 시도 | 경로=%s", frs_path)
+
     try:
         # 현재 작업 디렉토리를 기준으로 경로 해석
         path = Path(frs_path)
@@ -43,13 +65,16 @@ def load_frs_document(frs_path: str = "specs/FRS-1.md") -> Dict[str, Any]:
                 Path.cwd() / "spec_agent" / "specs/FRS-1.md",
                 Path(frs_path)
             ]
-            
+
             for alt_path in alternative_paths:
                 if alt_path.exists():
                     path = alt_path
                     break
             else:
-                raise FileNotFoundError(f"FRS file not found at {path}. Tried: {[str(p) for p in alternative_paths]}")
+                logger.error("FRS 파일 찾을 수 없음 | 경로=%s", path)
+                raise FileNotFoundError(
+                    f"FRS file not found at {path}. Tried: {[str(p) for p in alternative_paths]}"
+                )
 
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -68,20 +93,31 @@ def load_frs_document(frs_path: str = "specs/FRS-1.md") -> Dict[str, Any]:
             },
         )
 
-        return {
+        result = {
             "success": True,
             "frs": frs_doc.model_dump(),
             "content": content,
             "title": title,
             "debug_info": f"Successfully loaded from: {path}"
         }
+        logger.info("FRS 로드 성공 | 제목=%s", title)
+        return result
 
     except Exception as e:
-        return {"success": False, "error": f"Failed to load FRS document: {str(e)}", "attempted_path": str(path) if 'path' in locals() else frs_path}
+        logger.exception("FRS 로드 실패")
+        return {
+            "success": False,
+            "error": f"Failed to load FRS document: {str(e)}",
+            "attempted_path": str(path) if 'path' in locals() else frs_path,
+        }
 
 
 @tool
-def extract_frs_metadata(frs_content: str) -> Dict[str, Any]:
+def extract_frs_metadata(
+    frs_content: str,
+    *,
+    session_id: str | None = None,
+) -> Dict[str, Any]:
     """
     FRS 컨텐츠에서 메타데이터를 추출합니다.
 
@@ -91,6 +127,9 @@ def extract_frs_metadata(frs_content: str) -> Dict[str, Any]:
     Returns:
         추출된 메타데이터를 담은 딕셔너리
     """
+    logger = _get_logger(session_id)
+    logger.info("FRS 메타데이터 추출 시작")
+
     try:
         metadata = {}
 
@@ -134,7 +173,13 @@ def extract_frs_metadata(frs_content: str) -> Dict[str, Any]:
             else "medium" if complexity_score > 2 else "low"
         )
 
+        logger.info(
+            "FRS 메타데이터 추출 완료 | 섹션=%d | 요구사항=%d",
+            len(sections),
+            metadata["requirements_count"],
+        )
         return {"success": True, "metadata": metadata}
 
     except Exception as e:
+        logger.exception("FRS 메타데이터 추출 실패")
         return {"success": False, "error": f"Failed to extract FRS metadata: {str(e)}"}
