@@ -398,9 +398,12 @@ Output pure JSON only - no text before or after."""
     
     def _process_agent_result(self, agent_name: str, result: Any) -> str:
         """에이전트 결과 처리"""
+        if agent_name == 'openapi' and isinstance(result, dict):
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
         result_str = str(result)
 
-        # OpenAPI JSON인 경우 마크다운 블록 제거
+        # OpenAPI JSON인 경우 마크다운 블록 제거 및 JSON 검증
         if agent_name == 'openapi':
             # ```json 블록 제거
             if result_str.startswith('```json'):
@@ -411,6 +414,16 @@ Output pure JSON only - no text before or after."""
                 result_str = result_str[:-3]
             result_str = result_str.strip()
 
+            try:
+                parsed = json.loads(result_str)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "OpenAPI 결과를 JSON으로 파싱하는 데 실패했습니다: "
+                    f"{exc.msg} (line {exc.lineno}, column {exc.colno})"
+                ) from exc
+
+            return json.dumps(parsed, ensure_ascii=False, indent=2)
+
         return result_str
 
 
@@ -420,7 +433,10 @@ Output pure JSON only - no text before or after."""
         template_type = 'openapi' if agent_name == 'openapi' else agent_name
 
         try:
-            template_result = apply_template(content, template_type)
+            if agent_name == 'openapi':
+                template_result = validate_openapi_spec(content)
+            else:
+                template_result = apply_template(content, template_type)
         except Exception as e:
             print(f"  ❌ {agent_name} 템플릿 검증 도구 호출 실패: {str(e)}")
             raise
@@ -457,7 +473,7 @@ Output pure JSON only - no text before or after."""
 
             # 파일명 결정
             if agent_name == 'openapi':
-                filename = 'apis.json'
+                filename = 'openapi.json'
             else:
                 filename = f'{agent_name}.md'
             
@@ -488,7 +504,7 @@ Output pure JSON only - no text before or after."""
             
             # 파일명 결정
             if agent_name == 'openapi':
-                filename = 'apis.json'
+                filename = 'openapi.json'
             else:
                 filename = f'{agent_name}.md'
             
@@ -762,7 +778,7 @@ Output pure JSON only - no text before or after."""
                 "design.md",
                 "tasks.md",
                 "changes.md",
-                "apis.json"
+                "openapi.json"
             ]
             
             for file_name in files_to_validate:

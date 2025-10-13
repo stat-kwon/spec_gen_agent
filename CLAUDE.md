@@ -10,7 +10,7 @@ This is an **LLM-powered specification generation agent system** that automates 
 
 **Current Phase**: LLM-powered implementation complete
 - Fully functional LLM-based agent system
-- Sequential flow: FRS → requirements → design → tasks → changes → apis
+- Sequential flow: FRS → requirements → design → tasks → changes → openapi
 - Python 3.9+ runtime with OpenAI integration
 - Ready for production use with proper API key configuration
 
@@ -23,7 +23,7 @@ This is an **LLM-powered specification generation agent system** that automates 
   - `design.md` - Design documentation with sequence diagrams
   - `tasks.md` - Work breakdown structure
   - `changes.md` - Change management documentation
-  - `apis.json` - OpenAPI 3.1 specification (API services only)
+  - `openapi.json` - OpenAPI 3.1 specification (API services only)
 
 ### LLM Agent System (Implementation)
 The system uses LLM-powered agents in sequential flow:
@@ -105,7 +105,7 @@ The system enforces specific document templates:
 ### changes.md Structure
 - Version History → Change Summary → Impact/Risk → Rollback Plan → Known Issues
 
-### apis.json
+### openapi.json
 - OpenAPI 3.1 specification with standard sections
 
 ## Important Implementation Notes
