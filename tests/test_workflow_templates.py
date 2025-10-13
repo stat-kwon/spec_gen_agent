@@ -50,3 +50,69 @@ def test_apply_template_failure_prevents_save(tmp_path, monkeypatch):
     assert workflow.saved_files == []
     assert workflow.context['documents']['template_results']['requirements']['success'] is False
     assert 'Scope' in workflow.context['documents']['template_results']['requirements']['missing_sections']
+
+
+def test_sequential_workflow_prompts_use_absolute_paths(tmp_path, monkeypatch):
+    config = Config(openai_api_key="test-key")
+    workflow = SpecificationWorkflow(config=config)
+
+    project_output = tmp_path / "output"
+    workflow.context['project'] = {
+        'frs_content': '샘플 FRS',
+        'output_dir': str(project_output),
+        'frs_id': 'FRS-TEST',
+        'service_type': ServiceType.API.value,
+    }
+
+    captured_prompts = {}
+
+    def record_prompt(name, response):
+        def _inner(prompt):
+            captured_prompts[name] = prompt
+            return response
+
+        return _inner
+
+    workflow.agents = {
+        'requirements': record_prompt('requirements', "# Requirements\n- 내용"),
+        'design': record_prompt('design', "# Design\n- 내용"),
+        'tasks': record_prompt('tasks', "# Tasks\n- 내용"),
+        'changes': record_prompt('changes', "# Changes\n- 내용"),
+        'openapi': record_prompt('openapi', "{}"),
+    }
+
+    def successful_apply_template(content, template_type):
+        return {
+            'success': True,
+            'content': content,
+            'template_type': template_type,
+        }
+
+    def successful_validate_openapi_spec(content):
+        return {
+            'success': True,
+            'content': content,
+        }
+
+    monkeypatch.setattr('spec_agent.workflow.apply_template', successful_apply_template)
+    monkeypatch.setattr('spec_agent.workflow.validate_openapi_spec', successful_validate_openapi_spec)
+
+    result = asyncio.run(workflow._execute_sequential_workflow(ServiceType.API))
+
+    assert result['success'] is True
+
+    resolved_output = str(project_output.resolve())
+    requirements_path = str(Path(resolved_output) / "requirements.md")
+    design_path = str(Path(resolved_output) / "design.md")
+    tasks_path = str(Path(resolved_output) / "tasks.md")
+
+    assert f'read_spec_file("{requirements_path}")' in captured_prompts['design']
+    assert f'read_spec_file("{design_path}")' in captured_prompts['tasks']
+
+    changes_prompt = captured_prompts['changes']
+    for path in (requirements_path, design_path, tasks_path):
+        assert f'read_spec_file("{path}")' in changes_prompt
+
+    openapi_prompt = captured_prompts['openapi']
+    assert f'read_spec_file("{requirements_path}")' in openapi_prompt
+    assert f'read_spec_file("{design_path}")' in openapi_prompt

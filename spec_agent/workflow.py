@@ -210,9 +210,11 @@ class SpecificationWorkflow:
             if save_result:
                 saved_files.append(save_result['file_path'])
             
+            output_dir = str(Path(self.context['project']['output_dir']).resolve())
+
             # 2. Design 생성
             print("🔄 Design 생성 중...")
-            design_prompt = self._build_design_prompt({}, service_type.value)
+            design_prompt = self._build_design_prompt({}, service_type.value, output_dir)
             design_result = self.agents['design'](design_prompt)
             design_content = self._process_agent_result('design', design_result)
             self._validate_and_record_template('design', design_content)
@@ -220,10 +222,10 @@ class SpecificationWorkflow:
             save_result = self._save_agent_document_sync('design', design_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
-            
+
             # 3. Tasks 생성
             print("🔄 Tasks 생성 중...")
-            tasks_prompt = self._build_tasks_prompt({})
+            tasks_prompt = self._build_tasks_prompt({}, output_dir)
             tasks_result = self.agents['tasks'](tasks_prompt)
             tasks_content = self._process_agent_result('tasks', tasks_result)
             self._validate_and_record_template('tasks', tasks_content)
@@ -231,10 +233,10 @@ class SpecificationWorkflow:
             save_result = self._save_agent_document_sync('tasks', tasks_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
-            
+
             # 4. Changes 생성
             print("🔄 Changes 생성 중...")
-            changes_prompt = self._build_changes_prompt(service_type.value)
+            changes_prompt = self._build_changes_prompt(service_type.value, output_dir)
             changes_result = self.agents['changes'](changes_prompt)
             changes_content = self._process_agent_result('changes', changes_result)
             self._validate_and_record_template('changes', changes_content)
@@ -242,11 +244,11 @@ class SpecificationWorkflow:
             save_result = self._save_agent_document_sync('changes', changes_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
-            
+
             # 5. OpenAPI 생성 (API 서비스인 경우만)
             if service_type == ServiceType.API:
                 print("🔄 OpenAPI 생성 중...")
-                openapi_prompt = self._build_openapi_prompt({}, {})
+                openapi_prompt = self._build_openapi_prompt({}, {}, output_dir)
                 openapi_result = self.agents['openapi'](openapi_prompt)
                 openapi_content = self._process_agent_result('openapi', openapi_result)
                 self._validate_and_record_template('openapi', openapi_content)
@@ -314,14 +316,13 @@ FRS 내용:
 4. 수용 기준 포함
 5. 한국어로 작성"""
     
-    def _build_design_prompt(self, requirements_result: Dict, service_type: str) -> str:
+    def _build_design_prompt(self, requirements_result: Dict, service_type: str, output_dir: str) -> str:
         """설계 에이전트 프롬프트 - 파일 기반"""
-        output_dir = self.context['project']['output_dir']
-        requirements_file = f"{output_dir}/requirements.md"
-        
+        requirements_file = str(Path(output_dir) / "requirements.md")
+
         return f"""다음 요구사항 파일을 읽어서 상세한 design.md를 생성하세요:
 
-요구사항 파일 경로: {requirements_file}
+요구사항 파일을 확인하려면 read_spec_file("{requirements_file}")를 호출하세요.
 서비스 유형: {service_type}
 
 요구사항:
@@ -332,16 +333,15 @@ FRS 내용:
 5. 보안 및 성능 고려사항
 6. 한국어로 작성
 
-지침: 파일 경로에서 requirements.md를 읽어서 그 내용을 바탕으로 설계 문서를 작성하세요."""
-    
-    def _build_tasks_prompt(self, design_result: Dict) -> str:
+지침: read_spec_file("{requirements_file}")로 불러온 내용을 바탕으로 설계 문서를 작성하세요."""
+
+    def _build_tasks_prompt(self, design_result: Dict, output_dir: str) -> str:
         """작업 에이전트 프롬프트 - 파일 기반"""
-        output_dir = self.context['project']['output_dir']
-        design_file = f"{output_dir}/design.md"
-        
+        design_file = str(Path(output_dir) / "design.md")
+
         return f"""다음 설계 파일을 읽어서 상세한 tasks.md를 생성하세요:
 
-설계 파일 경로: {design_file}
+설계 파일을 확인하려면 read_spec_file("{design_file}")를 호출하세요.
 
 요구사항:
 1. Epic/Story/Task 계층 구조
@@ -351,13 +351,22 @@ FRS 내용:
 5. 의존성 표시
 6. 한국어로 작성
 
-지침: 파일 경로에서 design.md를 읽어서 그 내용을 바탕으로 작업 분해 문서를 작성하세요."""
-    
-    def _build_changes_prompt(self, service_type: str) -> str:
+지침: read_spec_file("{design_file}")로 불러온 내용을 바탕으로 작업 분해 문서를 작성하세요."""
+
+    def _build_changes_prompt(self, service_type: str, output_dir: str) -> str:
         """변경사항 에이전트 프롬프트"""
+        requirements_file = str(Path(output_dir) / "requirements.md")
+        design_file = str(Path(output_dir) / "design.md")
+        tasks_file = str(Path(output_dir) / "tasks.md")
+
         return f"""프로젝트 배포를 위한 상세한 changes.md를 생성하세요:
 
 서비스 유형: {service_type}
+
+참고 문서:
+- Requirements: read_spec_file("{requirements_file}")
+- Design: read_spec_file("{design_file}")
+- Tasks: read_spec_file("{tasks_file}")
 
 요구사항:
 1. 버전 이력
@@ -366,19 +375,17 @@ FRS 내용:
 4. 롤백 계획
 5. 알려진 이슈
 6. 한국어로 작성"""
-    
-    def _build_openapi_prompt(self, requirements_result: Dict, design_result: Dict) -> str:
+
+    def _build_openapi_prompt(self, requirements_result: Dict, design_result: Dict, output_dir: str) -> str:
         """OpenAPI 에이전트 프롬프트 - 파일 기반"""
-        output_dir = self.context['project']['output_dir']
-        requirements_file = f"{output_dir}/requirements.md"
-        design_file = f"{output_dir}/design.md"
-        
-        return f"""Create a complete OpenAPI 3.1 specification in JSON format by reading these files:
+        requirements_file = str(Path(output_dir) / "requirements.md")
+        design_file = str(Path(output_dir) / "design.md")
 
-Requirements file: {requirements_file}
-Design file: {design_file}
+        return f"""Create a complete OpenAPI 3.1 specification in JSON format.
 
-IMPORTANT: 
+Use read_spec_file("{requirements_file}") and read_spec_file("{design_file}") to load the source material before writing the specification.
+
+IMPORTANT:
 1. Read the contents of both files first
 2. Respond with only valid JSON. Start with {{ and end with }}
 3. Include:
