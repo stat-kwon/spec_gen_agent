@@ -588,9 +588,14 @@ def create_quality_assessor_agent(config: Config) -> Agent:
   "clarity": 점수,
   "technical": 점수,
   "overall": 전체점수,
-  "feedback": ["개선점1", "개선점2"],
+  "feedback": [
+    {"document": "design", "note": "설계 문서 개선 사항"},
+    {"document": "tasks", "note": "작업 문서 개선 사항"}
+  ],
   "needs_improvement": true/false
 }
+
+feedback 배열의 각 오브젝트는 반드시 document(대상 문서: requirements/design/tasks/changes/openapi 중 하나)와 note(구체적 개선 제안) 키를 포함해야 합니다.
 
 JSON 외의 설명 텍스트는 포함하지 마세요. 코드 블록(```json`)도 사용하지 마세요."""
 
@@ -641,11 +646,16 @@ def create_consistency_checker_agent(config: Config) -> Agent:
 
 **출력 형식**: 반드시 JSON 형식으로만 응답하세요.
 {
-  "issues": ["발견된 이슈 설명1", "발견된 이슈 설명2"],
+  "issues": [
+    {"document": "requirements", "note": "요구사항과 설계 간 ID 매핑 누락"},
+    {"document": "design", "note": "설계 다이어그램과 작업 항목 불일치"}
+  ],
   "severity": "low|medium|high",
   "cross_references": 누락된_교차참조_개수,
   "naming_conflicts": 명명_충돌_개수
 }
+
+issues 배열의 각 오브젝트는 document(대상 문서: requirements/design/tasks/changes/openapi 중 하나)와 note(구체적 불일치 설명)를 포함해야 합니다.
 
 설명이나 추가 텍스트 없이 JSON만 출력하세요. 코드 블록(```json`) 사용은 금지됩니다."""
 
@@ -690,11 +700,13 @@ def create_coordinator_agent(config: Config) -> Agent:
   "overall_quality": 점수,
   "decision": "승인/개선필요",
   "required_improvements": [
-    "개선사항1 (우선순위 높음)",
-    "개선사항2 (우선순위 중간)"
+    {"document": "design", "note": "보안 섹션 강화"},
+    {"document": "tasks", "note": "우선순위 태그 추가"}
   ],
   "message": "피드백 메시지"
 }
+
+required_improvements 배열의 각 오브젝트는 document(대상 문서: requirements/design/tasks/changes/openapi 중 하나)와 note(구체적 개선 지시)를 포함해야 합니다.
 
 추가 지침:
 - 반드시 순수 JSON만 반환하고, 서두나 마무리 문장을 붙이지 마세요.
