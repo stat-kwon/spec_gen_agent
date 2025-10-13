@@ -810,11 +810,40 @@ Output pure JSON only - no text before or after."""
             )
 
         title = f"{agent_name}.md"
+
+        template_results = (
+            self.context
+            .get('documents', {})
+            .get('template_results', {})
+            .get(agent_name, {})
+        )
+
+        required_sections = template_results.get('required_sections') or []
+        section_pairs: List[str] = []
+        if required_sections:
+            for idx in range(0, len(required_sections), 2):
+                first = required_sections[idx]
+                second = required_sections[idx + 1] if idx + 1 < len(required_sections) else first
+                if second and second != first:
+                    section_pairs.append(f"{first}/{second}")
+                else:
+                    section_pairs.append(first)
+
+        section_guidance = ""
+        if section_pairs:
+            bullet_lines = "\n".join(f"- {heading}" for heading in section_pairs)
+            section_guidance = (
+                "모든 필수 섹션 헤더는 아래 목록의 텍스트를 정확히 유지해야 합니다."
+                " (한글/영문 병기 포함).\n"
+                f"{bullet_lines}\n\n"
+            )
+
         return (
             f"당신은 {title} 문서를 개선하는 기술 문서 작성자입니다.\n"
             "아래 현재 문서를 검토하고 모든 피드백을 반영하여 전체 문서를 재작성하세요.\n"
             "문서 구조와 필수 섹션은 유지하되 내용을 구체화하고 명확하게 다듬으세요.\n"
             "결과는 완성된 한국어 문서 전체를 반환하세요.\n\n"
+            f"{section_guidance}"
             "현재 문서:\n"
             "----\n"
             f"{current_content}\n"
