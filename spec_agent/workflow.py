@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 import time
 import json
+import re
 
 
 from .config import Config
@@ -399,14 +400,14 @@ class SpecificationWorkflow:
                 self.logger.info("품질 개선 사이클 종료 - 추가 개선 불필요")
                 break
 
-            feedback_items = self._aggregate_feedback(quality_result, consistency_result, coordinator_result)
-            if not feedback_items:
+            feedback_by_doc = self._aggregate_feedback(quality_result, consistency_result, coordinator_result)
+            if not any(feedback_by_doc.values()):
                 self.logger.info("품질 개선 사이클 종료 - 피드백이 없습니다")
                 break
 
             updated_files = self._apply_feedback_to_documents(
                 documents,
-                feedback_items,
+                feedback_by_doc,
                 service_type,
             )
             if not updated_files:
@@ -631,7 +632,7 @@ Output pure JSON only - no text before or after."""
             "다음은 생성된 명세 문서 목록입니다. 각 문서의 실제 내용은 read_spec_file(path) 도구를 사용해 필요한 것만 읽으세요.\n"
             f"list_spec_files(\"{self.context.get('project', {}).get('output_dir', '')}\")를 호출하면 최신 파일 목록을 확인할 수 있습니다.\n\n"
             f"{review_payload}\n\n"
-            "평가 후 반드시 JSON으로만 응답하세요. 필수 키: completeness, consistency, clarity, technical, overall, feedback (리스트), needs_improvement (불리언)."
+            "평가 후 반드시 JSON으로만 응답하세요. 필수 키: completeness, consistency, clarity, technical, overall, feedback (document/note 필드를 가진 오브젝트 배열), needs_improvement (불리언)."
         )
 
     def _build_consistency_review_prompt(self, review_payload: str) -> str:
@@ -642,7 +643,7 @@ Output pure JSON only - no text before or after."""
             f"list_spec_files(\"{self.context.get('project', {}).get('output_dir', '')}\") 호출로 파일 현황을 확인할 수 있습니다.\n"
             "검토 후 JSON으로만 응답하세요.\n\n"
             f"{review_payload}\n\n"
-            "필수 JSON 키: issues (리스트), severity (low|medium|high), cross_references (정수), naming_conflicts (정수)."
+            "필수 JSON 키: issues (document/note 필드를 가진 오브젝트 배열), severity (low|medium|high), cross_references (정수), naming_conflicts (정수)."
         )
 
     def _build_coordinator_prompt(
@@ -671,7 +672,7 @@ Output pure JSON only - no text before or after."""
             f"문서 목록:\n{review_payload}\n\n"
             f"품질 평가 결과:\n{quality_json}\n\n"
             f"일관성 평가 결과:\n{consistency_json}\n\n"
-            "JSON 키: approved (불리언), overall_quality (숫자), decision, required_improvements (리스트), message."
+            "JSON 키: approved (불리언), overall_quality (숫자), decision, required_improvements (document/note 필드를 가진 오브젝트 배열), message."
         )
 
     def _parse_json_response(self, agent_name: str, response: Any) -> Dict[str, Any]:
@@ -743,57 +744,160 @@ Output pure JSON only - no text before or after."""
         quality_result: Dict[str, Any],
         consistency_result: Dict[str, Any],
         coordinator_result: Dict[str, Any],
-    ) -> List[str]:
-        """품질/일관성/코디네이터 결과에서 피드백을 취합합니다."""
+    ) -> Dict[str, List[str]]:
+        """품질/일관성/코디네이터 결과에서 문서별 피드백을 취합합니다."""
 
-        feedback_items: List[str] = []
+        feedback_by_doc: Dict[str, List[str]] = {}
+        general_notes: List[str] = []
+        seen: set = set()
+
+        def _add_feedback(documents: Optional[Any], note: Any, prefix: str):
+            if not note:
+                return
+
+            if isinstance(note, (dict, list)):
+                note_text = json.dumps(note, ensure_ascii=False)
+            else:
+                note_text = str(note).strip()
+
+            if not note_text:
+                return
+
+            labeled_note = f"[{prefix}] {note_text}" if prefix else note_text
+
+            doc_keys: List[str] = []
+            if isinstance(documents, list):
+                doc_keys = [doc for doc in documents if doc]
+            elif documents:
+                doc_keys = [documents]
+
+            normalized_docs = [
+                doc_key
+                for raw in doc_keys
+                for doc_key in self._normalize_feedback_documents(raw)
+            ]
+
+            if not normalized_docs:
+                general_notes.append(labeled_note)
+                return
+
+            for doc in normalized_docs:
+                key = (doc, labeled_note)
+                if key in seen:
+                    continue
+                seen.add(key)
+                feedback_by_doc.setdefault(doc, []).append(labeled_note)
 
         if isinstance(quality_result, dict):
-            feedback_items.extend(
-                [f"[품질] {item}" for item in quality_result.get('feedback', []) if item]
-            )
+            for item in quality_result.get('feedback', []) or []:
+                if isinstance(item, dict):
+                    documents = item.get('documents') or item.get('document')
+                    note = item.get('note') or item.get('message') or item.get('detail')
+                else:
+                    documents = None
+                    note = item
+                _add_feedback(documents, note, '품질')
 
         if isinstance(consistency_result, dict):
-            feedback_items.extend(
-                [f"[일관성] {item}" for item in consistency_result.get('issues', []) if item]
-            )
+            for item in consistency_result.get('issues', []) or []:
+                if isinstance(item, dict):
+                    documents = item.get('documents') or item.get('document')
+                    note = item.get('note') or item.get('message') or item.get('detail')
+                else:
+                    documents = None
+                    note = item
+                _add_feedback(documents, note, '일관성')
 
         if isinstance(coordinator_result, dict):
-            feedback_items.extend(
-                [
-                    f"[코디네이터] {item}"
-                    for item in coordinator_result.get('required_improvements', [])
-                    if item
-                ]
-            )
+            for item in coordinator_result.get('required_improvements', []) or []:
+                if isinstance(item, dict):
+                    documents = item.get('documents') or item.get('document')
+                    note = item.get('note') or item.get('message') or item.get('detail')
+                else:
+                    documents = None
+                    note = item
+                _add_feedback(documents, note, '코디네이터')
 
-        # 중복 제거 (순서 유지)
-        seen = set()
-        unique_feedback: List[str] = []
-        for item in feedback_items:
-            if item in seen:
-                continue
-            seen.add(item)
-            unique_feedback.append(item)
+        if general_notes:
+            for note in general_notes:
+                for doc in ['requirements', 'design', 'tasks', 'changes', 'openapi']:
+                    key = (doc, note)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    feedback_by_doc.setdefault(doc, []).append(note)
 
-        return unique_feedback
+        return feedback_by_doc
+
+    def _normalize_feedback_documents(self, raw: Any) -> List[str]:
+        """피드백 항목에 명시된 문서 식별자를 정규화합니다."""
+
+        if raw is None:
+            return []
+
+        if isinstance(raw, list):
+            normalized: List[str] = []
+            for value in raw:
+                normalized.extend(self._normalize_feedback_documents(value))
+            return normalized
+
+        text = str(raw).strip()
+        if not text:
+            return []
+
+        lowered = text.lower()
+        lowered = lowered.replace('.md', '').replace('.json', '')
+        lowered = lowered.replace('document', '').replace('doc', '').strip()
+        lowered = lowered.replace('섹션', '').strip()
+
+        compact = re.sub(r'[^a-z0-9]', '', lowered)
+
+        alias_map = {
+            'requirements': 'requirements',
+            'requirement': 'requirements',
+            'req': 'requirements',
+            'reqs': 'requirements',
+            'functionalrequirements': 'requirements',
+            'design': 'design',
+            'architecture': 'design',
+            'systemdesign': 'design',
+            'designdoc': 'design',
+            'tasks': 'tasks',
+            'task': 'tasks',
+            'workplan': 'tasks',
+            'workbreakdown': 'tasks',
+            'taskplan': 'tasks',
+            'changes': 'changes',
+            'change': 'changes',
+            'releaseplan': 'changes',
+            'deploymentplan': 'changes',
+            'changemanagement': 'changes',
+            'openapi': 'openapi',
+            'apispec': 'openapi',
+            'api': 'openapi',
+        }
+
+        normalized = alias_map.get(compact) or alias_map.get(lowered)
+        return [normalized] if normalized else []
 
     def _apply_feedback_to_documents(
         self,
         documents: Dict[str, Dict[str, str]],
-        feedback_items: List[str],
+        feedback_by_doc: Dict[str, List[str]],
         service_type: ServiceType,
     ) -> List[str]:
         """피드백을 반영하여 문서를 갱신합니다."""
 
-        if not feedback_items:
+        if not feedback_by_doc:
             return []
 
         updated_files: List[str] = []
-        feedback_text = "\n".join(f"- {item}" for item in feedback_items)
-
         for agent_name in self._get_document_agent_order(service_type):
             if agent_name not in documents:
+                continue
+
+            document_feedback = feedback_by_doc.get(agent_name, [])
+            if not document_feedback:
                 continue
 
             agent = self.agents.get(agent_name)
@@ -804,8 +908,11 @@ Output pure JSON only - no text before or after."""
             improvement_prompt = self._build_improvement_prompt(
                 agent_name,
                 current_content,
-                feedback_text,
+                document_feedback,
             )
+
+            if not improvement_prompt:
+                continue
 
             try:
                 result = agent(improvement_prompt)
@@ -826,9 +933,14 @@ Output pure JSON only - no text before or after."""
         self,
         agent_name: str,
         current_content: str,
-        feedback_text: str,
+        feedback_items: List[str],
     ) -> str:
         """문서 개선을 위한 프롬프트를 생성합니다."""
+
+        if not feedback_items:
+            return ""
+
+        feedback_text = "\n".join(f"- {item}" for item in feedback_items)
 
         if agent_name == 'openapi':
             return (

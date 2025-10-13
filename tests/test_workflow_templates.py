@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 import sys
 
@@ -186,14 +187,18 @@ def test_parse_json_response_extracts_object_from_wrapped_text():
     raw = (
         "아래는 개선된 결정입니다. 필요한 경우만 참고하세요. "
         '{"approved": false, "overall_quality": 68, "decision": "개선필요", '
-        '"required_improvements": ["요구사항 섹션 강화"], "message": "추가 수정 필요"}'
+        '"required_improvements": ['
+        '{"document": "design", "note": "보안 다이어그램 업데이트"}'
+        '], "message": "추가 수정 필요"}'
     )
 
     parsed = workflow._parse_json_response("coordinator", raw)
 
     assert parsed["approved"] is False
     assert parsed["overall_quality"] == 68
-    assert parsed["required_improvements"] == ["요구사항 섹션 강화"]
+    assert parsed["required_improvements"] == [
+        {"document": "design", "note": "보안 다이어그램 업데이트"}
+    ]
 
 
 def test_parse_json_response_handles_code_fences():
@@ -217,3 +222,109 @@ def test_parse_json_response_handles_code_fences():
         "cross_references": 0,
         "naming_conflicts": 0,
     }
+
+
+def test_quality_cycle_applies_feedback_per_document(tmp_path, monkeypatch):
+    config = Config(openai_api_key="test-key", max_iterations=1)
+    workflow = SpecificationWorkflow(config=config)
+
+    output_dir = tmp_path / "output"
+    workflow.context['project'] = {
+        'output_dir': str(output_dir),
+        'frs_id': 'FRS-TEST',
+        'service_type': ServiceType.API.value,
+        'frs_content': '샘플 FRS',
+    }
+
+    base_documents = {
+        'requirements': {'path': str(output_dir / 'requirements.md'), 'content': '# Requirements\n'},
+        'design': {'path': str(output_dir / 'design.md'), 'content': '# Design\n'},
+        'tasks': {'path': str(output_dir / 'tasks.md'), 'content': '# Tasks\n'},
+    }
+
+    def fake_load_documents(service_type):
+        return {name: doc.copy() for name, doc in base_documents.items()}
+
+    monkeypatch.setattr(workflow, '_load_generated_documents', fake_load_documents)
+
+    quality_response = {
+        'completeness': 70,
+        'consistency': 65,
+        'clarity': 68,
+        'technical': 66,
+        'overall': 67,
+        'feedback': [
+            {"document": "design", "note": "설계 다이어그램을 보강하세요."}
+        ],
+        'needs_improvement': True,
+    }
+
+    consistency_response = {
+        'issues': [
+            {"document": "tasks", "note": "설계 변경 사항을 작업 목록에 반영"}
+        ],
+        'severity': 'medium',
+        'cross_references': 1,
+        'naming_conflicts': 0,
+    }
+
+    coordinator_response = {
+        'approved': False,
+        'overall_quality': 68,
+        'decision': '개선필요',
+        'required_improvements': [
+            {"document": "design", "note": "보안 섹션에 암호화 다이어그램 추가"},
+            {"document": "tasks", "note": "보안 작업을 우선순위 높음으로 조정"},
+        ],
+        'message': '설계와 작업의 일관성을 맞춰주세요.',
+    }
+
+    workflow.agents = {
+        'quality_assessor': lambda prompt: json.dumps(quality_response, ensure_ascii=False),
+        'consistency_checker': lambda prompt: json.dumps(consistency_response, ensure_ascii=False),
+        'coordinator': lambda prompt: json.dumps(coordinator_response, ensure_ascii=False),
+    }
+
+    requirements_calls = []
+    design_calls = []
+    tasks_calls = []
+
+    def requirements_agent(prompt):
+        requirements_calls.append(prompt)
+        return '# Requirements\n'
+
+    workflow.agents['requirements'] = requirements_agent
+
+    def design_agent(prompt):
+        design_calls.append(prompt)
+        return '# Updated Design\n'
+
+    def tasks_agent(prompt):
+        tasks_calls.append(prompt)
+        return '# Updated Tasks\n'
+
+    workflow.agents['design'] = design_agent
+    workflow.agents['tasks'] = tasks_agent
+
+    def fake_validate(agent_name, content):
+        workflow.context['documents'].setdefault('previous_contents', {})[agent_name] = content
+        workflow.context['documents'].setdefault('template_results', {})[agent_name] = {'success': True}
+        return {'success': True}
+
+    def fake_save(agent_name, content):
+        path = output_dir / ('openapi.json' if agent_name == 'openapi' else f'{agent_name}.md')
+        return {'file_path': str(path)}
+
+    monkeypatch.setattr(workflow, '_validate_and_record_template', fake_validate)
+    monkeypatch.setattr(workflow, '_save_agent_document_sync', fake_save)
+
+    result = asyncio.run(workflow._run_quality_improvement_cycle(ServiceType.API))
+
+    assert result['improvement_applied'] is True
+    assert any(path.endswith('design.md') for path in result['updated_files'])
+    assert any(path.endswith('tasks.md') for path in result['updated_files'])
+    assert not any('requirements.md' in path for path in result['updated_files'])
+
+    assert len(design_calls) == 1
+    assert len(tasks_calls) == 1
+    assert requirements_calls == []
