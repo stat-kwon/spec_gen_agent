@@ -393,7 +393,7 @@ def create_openapi_agent(config: Config) -> Agent:
     )
 
     return Agent(
-        model=openai_model, tools=[validate_openapi_spec], system_prompt=prompt
+        model=openai_model, tools=[], system_prompt=prompt
     )
 
 
