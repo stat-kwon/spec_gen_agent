@@ -1,7 +1,12 @@
 """Strands Agent SDK 기반 명세서 생성 에이전트들."""
 
+import logging
+from typing import Optional
+
 from strands import Agent
 from strands.models.openai import OpenAIModel
+
+from ..logging_utils import get_session_logger
 from ..tools import (
     load_frs_document,
     extract_frs_metadata,
@@ -15,6 +20,15 @@ from ..tools import (
 from ..config import Config
 
 
+LOGGER = logging.getLogger("spec_agent.agents.factory")
+
+
+def _get_agent_logger(agent_name: str, session_id: Optional[str] = None):
+    if session_id:
+        return get_session_logger(f"agents.{agent_name}", session_id)
+    return logging.getLogger(f"spec_agent.agents.{agent_name}")
+
+
 class StrandsAgentFactory:
     """
     Strands Agent SDK의 고급 기능을 활용한 에이전트 팩토리.
@@ -26,7 +40,7 @@ class StrandsAgentFactory:
     - Agent-to-Agent 통신 최적화
     """
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, session_id: Optional[str] = None):
         """팩토리 초기화."""
         self.config = config
         self.base_model_config = {
@@ -34,6 +48,13 @@ class StrandsAgentFactory:
             "params": {"temperature": config.openai_temperature},
             "client_args": {"api_key": config.openai_api_key}
         }
+        self.session_id = session_id
+        self.logger = (
+            get_session_logger("agents.factory", session_id)
+            if session_id
+            else LOGGER
+        )
+        self.logger.info("StrandsAgentFactory 초기화")
     
     def create_enhanced_agent(
         self, 
@@ -42,7 +63,8 @@ class StrandsAgentFactory:
         tools: list,
         temperature: float = None,
         max_retries: int = 3,
-        enable_metrics: bool = True
+        enable_metrics: bool = True,
+        session_id: Optional[str] = None,
     ) -> Agent:
         """
         Strands의 고급 기능을 활용한 향상된 에이전트 생성.
@@ -58,6 +80,13 @@ class StrandsAgentFactory:
         Returns:
             향상된 Strands Agent 인스턴스
         """
+        logger = (
+            get_session_logger("agents.factory", session_id)
+            if session_id
+            else self.logger
+        )
+        logger.info("에이전트 생성 시작 | 타입=%s", agent_type)
+
         # 모델 설정 구성
         model_config = self.base_model_config.copy()
         if temperature is not None:
@@ -76,6 +105,7 @@ class StrandsAgentFactory:
             system_prompt=system_prompt
         )
         
+        logger.info("에이전트 생성 완료 | 타입=%s", agent_type)
         return agent
     
     def _get_agent_specific_config(self, agent_type: str) -> dict:
@@ -113,7 +143,11 @@ class StrandsAgentFactory:
         })
 
 
-def create_requirements_agent(config: Config) -> Agent:
+def create_requirements_agent(
+    config: Config,
+    *,
+    session_id: Optional[str] = None,
+) -> Agent:
     """
     Strands SDK의 고급 기능을 활용한 요구사항 생성 에이전트 생성.
     (.bk 버전의 상세 프롬프트 + 피드백 반영 기능)
@@ -121,7 +155,10 @@ def create_requirements_agent(config: Config) -> Agent:
     Returns:
         향상된 요구사항 생성 Strands Agent
     """
-    factory = StrandsAgentFactory(config)
+    logger = _get_agent_logger("requirements", session_id)
+    logger.info("요구사항 에이전트 프롬프트 구성 시작")
+
+    factory = StrandsAgentFactory(config, session_id=session_id)
     prompt = """당신은 기능 요구사항 명세서(FRS)를 상세한 기술 요구사항 문서로 변환하는 기술 요구사항 분석가입니다.
 
 **STEP 1**: 먼저 load_frs_document()를 호출하여 FRS 문서를 로드하세요. success가 True인지 확인하고 content를 얻으세요.
@@ -161,7 +198,7 @@ IMPORTANT:
 4. 문서 작성 후 apply_template("your_content", "requirements")를 호출하여 구조를 검증하세요
 5. 피드백이 있으면 해당 섹션을 개선하되 전체 구조는 유지하세요"""
 
-    return factory.create_enhanced_agent(
+    agent = factory.create_enhanced_agent(
         agent_type="requirements",
         system_prompt=prompt,
         tools=[
@@ -170,18 +207,28 @@ IMPORTANT:
             apply_template,
             validate_markdown_structure,
             validate_markdown_content,
-        ]
+        ],
+        session_id=session_id,
     )
+    logger.info("요구사항 에이전트 생성 완료")
+    return agent
 
 
-def create_design_agent(config: Config) -> Agent:
+def create_design_agent(
+    config: Config,
+    *,
+    session_id: Optional[str] = None,
+) -> Agent:
     """
     Strands SDK의 고급 기능을 활용한 설계 생성 에이전트 생성.
 
     Returns:
         향상된 설계 생성 Strands Agent
     """
-    factory = StrandsAgentFactory(config)
+    logger = _get_agent_logger("design", session_id)
+    logger.info("설계 에이전트 프롬프트 구성 시작")
+
+    factory = StrandsAgentFactory(config, session_id=session_id)
     prompt = """당신은 요구사항 명세서로부터 상세한 기술 설계 문서를 작성하는 시니어 소프트웨어 아키텍트입니다.
 
 **STEP 1**: 먼저 load_frs_document()를 호출하여 원본 FRS 문서를 로드하세요.
@@ -244,22 +291,32 @@ def create_design_agent(config: Config) -> Agent:
 2. 문서 작성 후 apply_template("your_content", "design")를 호출하여 구조를 검증하세요
 3. **오직 Design 관련 내용만** 작성하세요."""
 
-    return factory.create_enhanced_agent(
+    agent = factory.create_enhanced_agent(
         agent_type="design",
         system_prompt=prompt,
         tools=[apply_template, validate_markdown_structure, read_spec_file],
-        temperature=0.6  # 창의적 설계를 위해 약간 높은 temperature
+        temperature=0.6,  # 창의적 설계를 위해 약간 높은 temperature
+        session_id=session_id,
     )
+    logger.info("설계 에이전트 생성 완료")
+    return agent
 
 
-def create_tasks_agent(config: Config) -> Agent:
+def create_tasks_agent(
+    config: Config,
+    *,
+    session_id: Optional[str] = None,
+) -> Agent:
     """
     Strands SDK의 고급 기능을 활용한 작업 분해 에이전트 생성.
 
     Returns:
         향상된 작업 생성 Strands Agent
     """
-    factory = StrandsAgentFactory(config)
+    logger = _get_agent_logger("tasks", session_id)
+    logger.info("작업 분해 에이전트 프롬프트 구성 시작")
+
+    factory = StrandsAgentFactory(config, session_id=session_id)
     prompt = """당신은 기술 설계를 실행 가능한 개발 작업으로 분해하는 애자일 프로젝트 관리자입니다.
 
 **STEP 1**: 먼저 read_spec_file()을 사용하여 이미 생성된 requirements.md 파일을 읽으세요.
@@ -301,21 +358,31 @@ def create_tasks_agent(config: Config) -> Agent:
 1. 모든 4개 섹션(에픽, 스토리, 태스크, DoD)을 포함하세요
 2. 문서 작성 후 apply_template("your_content", "tasks")를 호출하여 구조를 검증하세요"""
 
-    return factory.create_enhanced_agent(
+    agent = factory.create_enhanced_agent(
         agent_type="tasks",
         system_prompt=prompt,
-        tools=[apply_template, validate_markdown_structure, read_spec_file]
+        tools=[apply_template, validate_markdown_structure, read_spec_file],
+        session_id=session_id,
     )
+    logger.info("작업 분해 에이전트 생성 완료")
+    return agent
 
 
-def create_changes_agent(config: Config) -> Agent:
+def create_changes_agent(
+    config: Config,
+    *,
+    session_id: Optional[str] = None,
+) -> Agent:
     """
     Strands SDK의 고급 기능을 활용한 변경사항 문서화 에이전트 생성.
 
     Returns:
         향상된 변경사항 생성 Strands Agent
     """
-    factory = StrandsAgentFactory(config)
+    logger = _get_agent_logger("changes", session_id)
+    logger.info("변경 관리 에이전트 프롬프트 구성 시작")
+
+    factory = StrandsAgentFactory(config, session_id=session_id)
     prompt = """당신은 소프트웨어 배포를 위한 포괄적인 변경 관리 문서를 작성하는 DevOps 변경 관리자입니다.
 
 **STEP 1**: 먼저 read_spec_file()을 사용하여 이미 생성된 requirements.md 파일을 읽으세요.
@@ -360,14 +427,21 @@ def create_changes_agent(config: Config) -> Agent:
 1. 모든 5개 섹션(버전 이력, 변경 요약, 영향/위험, 롤백 계획, 알려진 문제)을 포함하세요
 2. 문서 작성 후 apply_template("your_content", "changes")를 호출하여 구조를 검증하세요"""
 
-    return factory.create_enhanced_agent(
+    agent = factory.create_enhanced_agent(
         agent_type="changes",
         system_prompt=prompt,
-        tools=[apply_template, validate_markdown_structure, read_spec_file]
+        tools=[apply_template, validate_markdown_structure, read_spec_file],
+        session_id=session_id,
     )
+    logger.info("변경 관리 에이전트 생성 완료")
+    return agent
 
 
-def create_openapi_agent(config: Config) -> Agent:
+def create_openapi_agent(
+    config: Config,
+    *,
+    session_id: Optional[str] = None,
+) -> Agent:
     """
     Strands SDK를 사용하여 OpenAPI 명세 에이전트를 생성합니다.
 
@@ -386,15 +460,23 @@ def create_openapi_agent(config: Config) -> Agent:
 
 출력은 순수한 JSON만 포함해야 합니다. ```json 코드 블록이나 추가 설명 없이 `{`로 시작하고 `}`로 끝나는 하나의 JSON 객체를 반환하세요."""
 
+    logger = _get_agent_logger("openapi", session_id)
+    logger.info("OpenAPI 에이전트 초기화")
+
     openai_model = OpenAIModel(
         model_id=config.openai_model,
         params={"temperature": config.openai_temperature},
         client_args={"api_key": config.openai_api_key},
     )
 
-    return Agent(
-        model=openai_model, tools=[validate_openapi_spec], system_prompt=prompt
+    agent = Agent(
+        model=openai_model,
+        tools=[validate_openapi_spec],
+        system_prompt=prompt,
     )
+
+    logger.info("OpenAPI 에이전트 준비 완료")
+    return agent
 
 
 def create_markdown_to_json_agent(config: Config) -> Agent:

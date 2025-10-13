@@ -3,16 +3,17 @@
 복잡한 state 관리 없이 필요한 기능만 포함
 """
 
-import asyncio
+import inspect
+import logging
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-from datetime import datetime
 import time
 import json
 
 
 from .config import Config
 from .models import ServiceType
+from .logging_utils import configure_logging, get_agent_logger, get_session_logger
 from .tools import (
     load_frs_document,
     write_spec_file,
@@ -60,33 +61,61 @@ class SpecificationWorkflow:
         }
         
         # 에이전트 컨테이너
-        self.agents = {}
-        
+        self.agents: Dict[str, Any] = {}
+
         # 저장된 파일 목록 추적
-        self.saved_files = []
-        
-        # 세션 ID 생성
+        self.saved_files: List[str] = []
+
+        # 세션 ID 생성 및 로거 구성
         self.session_id = f"spec-{int(time.time())}"
-        
-        print("✅ 워크플로우 초기화 완료")
+        configure_logging(self.config.log_level)
+        self.logger = get_session_logger("workflow", self.session_id)
+        self._agent_loggers: Dict[str, logging.LoggerAdapter] = {}
+
+        self.logger.info("워크플로우 초기화 완료")
+
+    def _tool_kwargs(self, tool_fn):
+        """도구 함수 호출 시 session_id 지원 여부에 따라 kwargs 제공"""
+
+        try:
+            signature = inspect.signature(tool_fn)
+        except (TypeError, ValueError):
+            return {}
+
+        if "session_id" in signature.parameters:
+            return {"session_id": self.session_id}
+
+        return {}
     
     def _initialize_agents(self):
         """에이전트 초기화"""
-        print("🤖 에이전트 초기화 중...")
-        
+        self.logger.info("에이전트 초기화 시작")
+
         # 기본 문서 생성 에이전트들
         self.agents = {
-            'requirements': create_requirements_agent(self.config),
-            'design': create_design_agent(self.config),
-            'tasks': create_tasks_agent(self.config),
-            'changes': create_changes_agent(self.config),
-            'openapi': create_openapi_agent(self.config)
+            'requirements': create_requirements_agent(self.config, session_id=self.session_id),
+            'design': create_design_agent(self.config, session_id=self.session_id),
+            'tasks': create_tasks_agent(self.config, session_id=self.session_id),
+            'changes': create_changes_agent(self.config, session_id=self.session_id),
+            'openapi': create_openapi_agent(self.config, session_id=self.session_id)
         }
-        
-        print(f"✅ {len(self.agents)}개 에이전트 초기화 완료")
-    
-    
-    
+
+        self._agent_loggers = {
+            name: get_agent_logger(self.session_id, name)
+            for name in self.agents
+        }
+
+        self.logger.info("%d개 에이전트 초기화 완료", len(self.agents))
+
+    def _get_agent_logger(self, agent_name: str) -> logging.LoggerAdapter:
+        """세션 컨텍스트와 함께 에이전트 로거를 반환합니다."""
+
+        if agent_name not in self._agent_loggers:
+            self._agent_loggers[agent_name] = get_agent_logger(self.session_id, agent_name)
+        return self._agent_loggers[agent_name]
+
+
+
     async def execute_workflow(
         self,
         frs_path: str,
@@ -100,20 +129,21 @@ class SpecificationWorkflow:
         
         try:
             # 1. FRS 로드 및 프로젝트 정보 설정
-            print(f"\n📖 FRS 로드 중: {frs_path}")
+            self.logger.info("FRS 로드 시작 | 경로: %s", frs_path)
             await self._initialize_project(frs_path, service_type, output_dir)
-            
+            self.logger.info("FRS 로드 완료 | 서비스 유형: %s", service_type.value)
+
             # 2. Git 브랜치 생성 (선택적)
             if use_git:
                 await self._setup_git_branch()
-            
+
             # 3. 에이전트 초기화
             self._initialize_agents()
-            
+
             # 4. 순차적 파일 기반 워크플로우 실행
-            print("\n🔄 순차적 파일 기반 워크플로우 시작...")
+            self.logger.info("순차적 파일 기반 워크플로우 시작")
             workflow_result = await self._execute_sequential_workflow(service_type)
-            
+
             # 5. 저장된 파일 목록 수집
             files_written = workflow_result.get('saved_files', [])
             
@@ -123,7 +153,12 @@ class SpecificationWorkflow:
             
             # 7. 결과 반환
             execution_time = time.time() - start_time
-            
+            self.logger.info(
+                "워크플로우 완료 | 생성 파일 %d개 | 실행 시간 %.2f초",
+                len(files_written),
+                execution_time,
+            )
+
             return {
                 "success": True,
                 "session_id": self.session_id,
@@ -133,11 +168,11 @@ class SpecificationWorkflow:
                 "execution_time": execution_time,
                 "framework": "Strands Agent SDK - Sequential"
             }
-            
+
         except Exception as e:
             error_msg = f"워크플로우 실행 실패: {str(e)}"
-            print(f"❌ {error_msg}")
-            
+            self.logger.exception("워크플로우 실행 실패")
+
             # 부분적으로라도 저장된 파일이 있다면 반환
             partial_files = self.saved_files if hasattr(self, 'saved_files') else []
             
@@ -158,7 +193,10 @@ class SpecificationWorkflow:
     ):
         """프로젝트 정보 초기화"""
         # FRS 로드
-        frs_result = load_frs_document(frs_path)
+        frs_result = load_frs_document(
+            frs_path,
+            **self._tool_kwargs(load_frs_document),
+        )
         if not frs_result.get("success"):
             raise ValueError(f"FRS 로드 실패: {frs_path}")
         
@@ -177,29 +215,34 @@ class SpecificationWorkflow:
         # 출력 디렉토리 생성
         output_path = Path(self.context['project']['output_dir'])
         output_path.mkdir(parents=True, exist_ok=True)
-        print(f"📁 출력 디렉토리: {self.context['project']['output_dir']}")
+        self.logger.info("출력 디렉토리 준비 완료 | 경로: %s", self.context['project']['output_dir'])
     
     async def _setup_git_branch(self):
         """Git 브랜치 설정"""
         frs_id = self.context['project']['frs_id']
         service_type = self.context['project']['service_type']
         
-        git_result = create_git_branch(frs_id, service_type)
+        git_result = create_git_branch(
+            frs_id,
+            service_type,
+            **self._tool_kwargs(create_git_branch),
+        )
         if git_result.get("success"):
-            print(f"🌿 Git 브랜치: {git_result.get('branch_name')}")
+            self.logger.info("Git 브랜치 생성 완료 | 이름: %s", git_result.get('branch_name'))
         else:
-            print(f"⚠️ Git 브랜치 생성 실패: {git_result.get('error')}")
+            self.logger.warning("Git 브랜치 생성 실패 | 이유: %s", git_result.get('error'))
     
     async def _execute_sequential_workflow(self, service_type: ServiceType) -> Dict[str, Any]:
         """순차적 파일 기반 워크플로우 실행"""
-        
-        print("🚀 순차적 파일 기반 워크플로우 시작...")
-        
+
+        self.logger.info("순차적 파일 기반 워크플로우 실행 시작")
+
         try:
             saved_files = []
-            
+
             # 1. Requirements 생성
-            print("🔄 Requirements 생성 중...")
+            requirements_logger = self._get_agent_logger('requirements')
+            requirements_logger.info("문서 생성 시작")
             frs_content = self.context['project']['frs_content']
             req_prompt = self._build_requirements_prompt(frs_content, service_type.value, {})
             req_result = self.agents['requirements'](req_prompt)
@@ -209,11 +252,15 @@ class SpecificationWorkflow:
             save_result = self._save_agent_document_sync('requirements', req_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
-            
+                requirements_logger.info("문서 생성 완료 | 파일: %s", save_result['file_path'])
+            else:
+                requirements_logger.warning("문서 저장 실패")
+
             output_dir = str(Path(self.context['project']['output_dir']).resolve())
 
             # 2. Design 생성
-            print("🔄 Design 생성 중...")
+            design_logger = self._get_agent_logger('design')
+            design_logger.info("문서 생성 시작")
             design_prompt = self._build_design_prompt({}, service_type.value, output_dir)
             design_result = self.agents['design'](design_prompt)
             design_content = self._process_agent_result('design', design_result)
@@ -222,9 +269,13 @@ class SpecificationWorkflow:
             save_result = self._save_agent_document_sync('design', design_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
+                design_logger.info("문서 생성 완료 | 파일: %s", save_result['file_path'])
+            else:
+                design_logger.warning("문서 저장 실패")
 
             # 3. Tasks 생성
-            print("🔄 Tasks 생성 중...")
+            tasks_logger = self._get_agent_logger('tasks')
+            tasks_logger.info("문서 생성 시작")
             tasks_prompt = self._build_tasks_prompt({}, output_dir)
             tasks_result = self.agents['tasks'](tasks_prompt)
             tasks_content = self._process_agent_result('tasks', tasks_result)
@@ -233,9 +284,13 @@ class SpecificationWorkflow:
             save_result = self._save_agent_document_sync('tasks', tasks_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
+                tasks_logger.info("문서 생성 완료 | 파일: %s", save_result['file_path'])
+            else:
+                tasks_logger.warning("문서 저장 실패")
 
             # 4. Changes 생성
-            print("🔄 Changes 생성 중...")
+            changes_logger = self._get_agent_logger('changes')
+            changes_logger.info("문서 생성 시작")
             changes_prompt = self._build_changes_prompt(service_type.value, output_dir)
             changes_result = self.agents['changes'](changes_prompt)
             changes_content = self._process_agent_result('changes', changes_result)
@@ -244,10 +299,14 @@ class SpecificationWorkflow:
             save_result = self._save_agent_document_sync('changes', changes_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
+                changes_logger.info("문서 생성 완료 | 파일: %s", save_result['file_path'])
+            else:
+                changes_logger.warning("문서 저장 실패")
 
             # 5. OpenAPI 생성 (API 서비스인 경우만)
             if service_type == ServiceType.API:
-                print("🔄 OpenAPI 생성 중...")
+                openapi_logger = self._get_agent_logger('openapi')
+                openapi_logger.info("문서 생성 시작")
                 openapi_prompt = self._build_openapi_prompt({}, {}, output_dir)
                 openapi_result = self.agents['openapi'](openapi_prompt)
                 openapi_content = self._process_agent_result('openapi', openapi_result)
@@ -256,17 +315,19 @@ class SpecificationWorkflow:
                 save_result = self._save_agent_document_sync('openapi', openapi_content)
                 if save_result:
                     saved_files.append(save_result['file_path'])
-            
+                    openapi_logger.info("문서 생성 완료 | 파일: %s", save_result['file_path'])
+                else:
+                    openapi_logger.warning("문서 저장 실패")
+
+            self.logger.info("순차적 워크플로우 종료 | 저장 파일 %d개", len(saved_files))
             return {
                 'success': True,
                 'saved_files': saved_files,
                 'execution_type': 'sequential'
             }
-            
+
         except Exception as e:
-            print(f"❌ 순차적 워크플로우 실패: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            self.logger.exception("순차적 워크플로우 실패")
             return {
                 'success': False,
                 'error': str(e)
@@ -438,14 +499,22 @@ Output pure JSON only - no text before or after."""
         """apply_template 도구로 결과를 검증하고 컨텍스트에 저장"""
 
         template_type = 'openapi' if agent_name == 'openapi' else agent_name
+        agent_logger = self._get_agent_logger(agent_name)
 
         try:
             if agent_name == 'openapi':
-                template_result = validate_openapi_spec(content)
+                template_result = validate_openapi_spec(
+                    content,
+                    **self._tool_kwargs(validate_openapi_spec),
+                )
             else:
-                template_result = apply_template(content, template_type)
-        except Exception as e:
-            print(f"  ❌ {agent_name} 템플릿 검증 도구 호출 실패: {str(e)}")
+                template_result = apply_template(
+                    content,
+                    template_type,
+                    **self._tool_kwargs(apply_template),
+                )
+        except Exception:
+            agent_logger.exception("템플릿 검증 도구 호출 실패")
             raise
 
         # 컨텍스트에 결과 기록
@@ -467,7 +536,7 @@ Output pure JSON only - no text before or after."""
             else:
                 detail = "템플릿 검증에 실패했습니다."
 
-            print(f"  ❌ {agent_name} 템플릿 검증 실패: {detail}")
+            agent_logger.error("템플릿 검증 실패 | 상세: %s", detail)
             raise ValueError(f"{agent_name} 템플릿 검증 실패: {detail}")
 
         return template_result
@@ -475,6 +544,7 @@ Output pure JSON only - no text before or after."""
 
     async def _save_agent_document(self, agent_name: str, content: str) -> Optional[Dict[str, Any]]:
         """개별 에이전트 문서 즉시 저장 (비동기 버전)"""
+        agent_logger = self._get_agent_logger(agent_name)
         try:
             output_dir = self.context['project']['output_dir']
 
@@ -485,8 +555,13 @@ Output pure JSON only - no text before or after."""
                 filename = f'{agent_name}.md'
             
             # 파일 저장
-            result = await write_spec_file(output_dir, content, filename)
-            
+            result = await write_spec_file(
+                output_dir,
+                content,
+                filename,
+                **self._tool_kwargs(write_spec_file),
+            )
+
             if result.get("success"):
                 file_info = {
                     "filename": filename,
@@ -495,17 +570,27 @@ Output pure JSON only - no text before or after."""
                 }
                 # 저장된 파일 목록에 추가
                 self.saved_files.append(result.get("file_path"))
+                agent_logger.info(
+                    "문서 저장 완료 | 파일: %s | 크기: %d bytes",
+                    file_info["file_path"],
+                    file_info["size"],
+                )
                 return file_info
             else:
-                print(f"  ❌ {filename} 저장 실패: {result.get('error')}")
+                agent_logger.error(
+                    "문서 저장 실패 | 파일: %s | 이유: %s",
+                    filename,
+                    result.get('error'),
+                )
                 return None
-                
-        except Exception as e:
-            print(f"  ❌ {agent_name} 문서 저장 중 오류: {str(e)}")
+
+        except Exception:
+            agent_logger.exception("문서 저장 중 오류 발생")
             return None
     
     def _save_agent_document_sync(self, agent_name: str, content: str) -> Optional[Dict[str, Any]]:
         """개별 에이전트 문서 즉시 저장 (동기 버전)"""
+        agent_logger = self._get_agent_logger(agent_name)
         try:
             output_dir = self.context['project']['output_dir']
             
@@ -526,12 +611,15 @@ Output pure JSON only - no text before or after."""
             # 파일 저장
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-            
+
             file_size = file_path.stat().st_size
-            
-            print(f"  📁 {filename} {action} 완료 ({file_size} bytes)")
-            print(f"     💾 위치: {file_path}")
-            
+            agent_logger.info(
+                "문서 저장 완료 | 파일: %s | 작업: %s | 크기: %d bytes",
+                str(file_path),
+                action,
+                file_size,
+            )
+
             # 저장된 파일 목록에 추가 (중복 방지)
             file_path_str = str(file_path)
             if file_path_str not in self.saved_files:
@@ -543,9 +631,9 @@ Output pure JSON only - no text before or after."""
                 "size": file_size,
                 "action": action
             }
-                
-        except Exception as e:
-            print(f"  ❌ {agent_name} 문서 저장 중 오류: {str(e)}")
+
+        except Exception:
+            agent_logger.exception("문서 저장 중 오류 발생")
             return None
     
     
@@ -557,15 +645,17 @@ Output pure JSON only - no text before or after."""
     async def _collect_and_save_node_results(self, graph, service_type: ServiceType) -> List[str]:
         """Graph의 각 노드 결과를 수집하고 파일로 저장"""
         saved_files = []
-        
+
         try:
+            self.logger.info("Graph 노드 결과 수집 시작")
             # Graph 객체에서 노드별 결과 접근
             nodes_to_save = ['requirements', 'design', 'tasks', 'changes']
             if service_type == ServiceType.API:
                 nodes_to_save.append('openapi')
-            
+
             for node_name in nodes_to_save:
                 try:
+                    node_logger = self._get_agent_logger(node_name)
                     # Graph의 노드에서 결과 가져오기
                     node_result = self._get_node_result(graph, node_name)
 
@@ -579,20 +669,24 @@ Output pure JSON only - no text before or after."""
                         save_result = self._save_agent_document_sync(node_name, processed_result)
                         if save_result:
                             saved_files.append(save_result['file_path'])
-                            print(f"  📁 {save_result['filename']} {save_result['action']} 완료")
+                            node_logger.info(
+                                "문서 저장 완료 | 파일: %s | 작업: %s",
+                                save_result['file_path'],
+                                save_result['action'],
+                            )
                         else:
-                            print(f"  ❌ {node_name} 저장 실패")
+                            node_logger.error("문서 저장 실패")
                     else:
-                        print(f"  ⚠️ {node_name} 노드 결과 없음")
-                        
-                except Exception as e:
-                    print(f"  ❌ {node_name} 처리 중 오류: {str(e)}")
-            
-            print(f"✅ 총 {len(saved_files)}개 파일 저장 완료")
+                        node_logger.warning("노드 결과 없음")
+
+                except Exception:
+                    self._get_agent_logger(node_name).exception("노드 결과 처리 중 오류")
+
+            self.logger.info("Graph 노드 결과 수집 완료 | 저장 파일 %d개", len(saved_files))
             return saved_files
-            
-        except Exception as e:
-            print(f"❌ 노드 결과 수집 실패: {str(e)}")
+
+        except Exception:
+            self.logger.exception("노드 결과 수집 실패")
             return saved_files
     
     def _get_node_result(self, graph, node_name: str):
@@ -617,25 +711,27 @@ Output pure JSON only - no text before or after."""
                 
             return None
             
-        except Exception as e:
-            print(f"  ⚠️ {node_name} 노드 결과 접근 실패: {str(e)}")
+        except Exception:
+            self._get_agent_logger(node_name).exception("노드 결과 접근 실패")
             return None
     
     async def _generate_remaining_documents(self, requirements_content: str, service_type: ServiceType) -> List[str]:
         """requirements.md를 기반으로 나머지 문서들 생성"""
         saved_files = []
-        
+
         try:
+            self.logger.info("나머지 문서 생성 시작")
             # 나머지 생성할 문서들
             remaining_agents = ['design', 'tasks', 'changes']
             if service_type == ServiceType.API:
                 remaining_agents.append('openapi')
-            
+
             current_content = {'requirements': requirements_content}
-            
+
             for agent_name in remaining_agents:
                 try:
-                    print(f"🔄 {agent_name} 문서 생성 중...")
+                    agent_logger = self._get_agent_logger(agent_name)
+                    agent_logger.info("문서 생성 시작")
 
                     # 에이전트별 프롬프트 생성
                     prompt = self._build_agent_prompt_from_previous(agent_name, current_content, service_type.value)
@@ -654,18 +750,23 @@ Output pure JSON only - no text before or after."""
                     save_result = self._save_agent_document_sync(agent_name, result_text)
                     if save_result:
                         saved_files.append(save_result['file_path'])
-                        print(f"  📁 {save_result['filename']} {save_result['action']} 완료")
+                        agent_logger.info(
+                            "문서 생성 완료 | 파일: %s | 작업: %s",
+                            save_result['file_path'],
+                            save_result['action'],
+                        )
                     else:
-                        print(f"  ❌ {agent_name} 저장 실패")
-                    
-                except Exception as e:
-                    print(f"  ❌ {agent_name} 생성 중 오류: {str(e)}")
+                        agent_logger.error("문서 저장 실패")
+
+                except Exception:
+                    self._get_agent_logger(agent_name).exception("문서 생성 중 오류")
                     continue
-            
+
+            self.logger.info("나머지 문서 생성 완료 | 저장 파일 %d개", len(saved_files))
             return saved_files
-            
-        except Exception as e:
-            print(f"❌ 나머지 문서 생성 실패: {str(e)}")
+
+        except Exception:
+            self.logger.exception("나머지 문서 생성 실패")
             return saved_files
     
     def _build_agent_prompt_from_previous(self, agent_name: str, previous_contents: Dict[str, str], service_type: str) -> str:
@@ -756,12 +857,20 @@ Output pure JSON only - no text before or after."""
         frs_id = self.context['project']['frs_id']
         service_type = self.context['project']['service_type']
         
-        result = commit_changes(frs_id, service_type, files_written)
-        
+        result = commit_changes(
+            frs_id,
+            service_type,
+            files_written,
+            **self._tool_kwargs(commit_changes),
+        )
+
         if result.get("success"):
-            print(f"✅ Git 커밋 완료: {result.get('commit_hash', '')[:8]}")
+            self.logger.info(
+                "Git 커밋 완료 | 해시: %s",
+                result.get('commit_hash', '')[:8],
+            )
         else:
-            print(f"⚠️ Git 커밋 실패: {result.get('error')}")
+            self.logger.warning("Git 커밋 실패 | 이유: %s", result.get('error'))
     
     def _extract_frs_id(self, frs_path: str) -> str:
         """FRS ID 추출"""
