@@ -11,7 +11,7 @@ Advanced AI-powered specification generator using iterative refinement for high-
   - `design.md` - Design documentation with architecture diagrams
   - `tasks.md` - Work breakdown structure with Epic/Story/Task hierarchy
   - `changes.md` - Change management documentation
-  - `apis.json` - OpenAPI 3.1 specification (API services only)
+  - `openapi.json` - OpenAPI 3.1 specification (API services only)
 - Built-in validation and quality checks
 - Agent-based architecture for modular processing
 
@@ -108,7 +108,7 @@ specs/
     │   ├── design.md
     │   ├── tasks.md
     │   ├── changes.md
-    │   └── apis.json
+    │   └── openapi.json
     └── web/
         ├── requirements.md
         ├── design.md

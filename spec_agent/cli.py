@@ -317,7 +317,7 @@ def agents(ctx):
         ("design", "Generate design.md with architecture", "🏗️"),
         ("tasks", "Generate tasks.md with Epic/Story/Task breakdown", "📋"),
         ("changes", "Generate changes.md with deployment info", "📝"),
-        ("openapi", "Generate apis.json OpenAPI 3.1 spec (API only)", "🔌"),
+        ("openapi", "Generate openapi.json OpenAPI 3.1 spec (API only)", "🔌"),
         ("validation", "Validate all generated documents", "🔍"),
     ]
 

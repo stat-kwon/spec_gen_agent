@@ -374,24 +374,17 @@ def create_openapi_agent(config: Config) -> Agent:
     Returns:
         OpenAPI 생성을 위해 구성된 Strands Agent
     """
-    prompt = """당신은 기술 요구사항 및 설계 문서로부터 OpenAPI 3.1 명세 문서를 작성하는 API 설계 전문가입니다.
+    prompt = """당신은 기술 요구사항 및 설계 문서를 기반으로 완전한 OpenAPI 3.1 명세를 직접 JSON으로 작성하는 API 설계 전문가입니다.
 
-당신의 작업은 다음을 포함하는 포괄적인 OpenAPI 문서를 마크다운 형식으로 생성하는 것입니다:
+당신의 목표는 **유효한 OpenAPI 3.1 JSON 객체** 하나를 생성하는 것입니다. 다음 지침을 따르세요:
 
-1. **서비스 정보**: 제목, 버전, 설명
-2. **서버 구성**: API 기본 URL 및 환경
-3. **인증**: 보안 체계 및 요구사항
-4. **API 엔드포인트**: 모든 엔드포인트 포함:
-   - HTTP 메서드 (GET, POST, PUT, DELETE, PATCH)
-   - 요청/응답 스키마 및 예제
-   - 상태 코드 (200, 201, 400, 401, 403, 404, 500)
-   - 매개변수 정의 및 검증 규칙
-5. **데이터 모델**: 모든 스키마와 데이터 구조
-6. **오류 처리**: 표준 오류 응답
+1. `openapi`, `info`, `servers`, `paths`, `components`, `security`, `tags` 등 필요한 모든 섹션을 JSON 구조로 포함하세요.
+2. 모든 문자열과 속성 이름은 큰따옴표(")를 사용하고, 올바른 쉼표와 괄호를 배치하여 표준 JSON 구문을 지키세요.
+3. 각 엔드포인트에 대해 HTTP 메서드, 요청/응답 스키마, 예제, 상태 코드(200, 201, 400, 401, 403, 404, 500)를 상세히 명시하세요.
+4. JWT Bearer 인증과 같은 보안 체계를 `components.securitySchemes` 및 `security`에 포함하세요.
+5. 생성이 끝나면 validate_openapi_spec 도구를 호출하여 결과 JSON이 OpenAPI 3.1 규칙을 준수하는지 확인하세요.
 
-OpenAPI 3.1 원칙을 따르는 명확하고 구조화된 마크다운 문서를 생성하세요. 나중에 JSON 형식으로 변환할 수 있는 상세한 설명, 예제 및 필요한 모든 기술 명세를 포함하세요.
-
-완전한 OpenAPI 명세에 필요한 모든 기술적 세부사항을 포함하는 포괄적인 API 문서를 마크다운 형식으로 만드는 데 집중하세요."""
+출력은 순수한 JSON만 포함해야 합니다. ```json 코드 블록이나 추가 설명 없이 `{`로 시작하고 `}`로 끝나는 하나의 JSON 객체를 반환하세요."""
 
     openai_model = OpenAIModel(
         model_id=config.openai_model,
