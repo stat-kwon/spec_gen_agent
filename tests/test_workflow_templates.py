@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from spec_agent.config import Config
 from spec_agent.models import ServiceType
 from spec_agent.workflow import SpecificationWorkflow
+from spec_agent.tools.template_tools import apply_template
 
 
 def test_apply_template_failure_prevents_save(tmp_path, monkeypatch):
@@ -116,3 +117,103 @@ def test_sequential_workflow_prompts_use_absolute_paths(tmp_path, monkeypatch):
     openapi_prompt = captured_prompts['openapi']
     assert f'read_spec_file("{requirements_path}")' in openapi_prompt
     assert f'read_spec_file("{design_path}")' in openapi_prompt
+
+
+def test_apply_template_allows_headings_without_space():
+    content = """
+#헤더/메타
+기본 메타 정보
+
+# 범위
+시스템 범위 설명
+
+# 기능 요구사항
+## REQ-001: 항목
+- **설명**: 테스트
+- **우선순위**: 높음
+- **종속성**: 없음
+- **수용 기준**: 기준
+
+# 오류 요구사항
+에러 처리 정책
+
+##보안 ＆ 개인정보/Security & Privacy
+보안 및 개인정보 보호 항목
+
+# 관측 가능성
+모니터링 요구사항
+
+# 수용 기준
+테스트 기준 요약
+"""
+
+    result = apply_template(content, "requirements")
+
+    assert result["success"] is True
+    assert result["missing_sections"] == []
+
+
+def test_apply_template_changes_tolerates_spacing_variants():
+    content = """
+# changes
+
+## Version History / 버전 이력
+기존 릴리스 정보
+
+## 변경 요약 / Change Summary
+- 주요 변경사항 나열
+
+## 영향 / 위험 / Impact / Risk
+- 영향과 위험 요소
+
+## Rollback Plan / 롤백 계획
+- 롤백 프로세스
+
+## Known Issues / 알려진 문제
+- 알려진 이슈
+"""
+
+    result = apply_template(content, "changes")
+
+    assert result["success"] is True
+    assert result["missing_sections"] == []
+
+
+def test_parse_json_response_extracts_object_from_wrapped_text():
+    config = Config(openai_api_key="test-key")
+    workflow = SpecificationWorkflow(config=config)
+
+    raw = (
+        "아래는 개선된 결정입니다. 필요한 경우만 참고하세요. "
+        '{"approved": false, "overall_quality": 68, "decision": "개선필요", '
+        '"required_improvements": ["요구사항 섹션 강화"], "message": "추가 수정 필요"}'
+    )
+
+    parsed = workflow._parse_json_response("coordinator", raw)
+
+    assert parsed["approved"] is False
+    assert parsed["overall_quality"] == 68
+    assert parsed["required_improvements"] == ["요구사항 섹션 강화"]
+
+
+def test_parse_json_response_handles_code_fences():
+    config = Config(openai_api_key="test-key")
+    workflow = SpecificationWorkflow(config=config)
+
+    raw = """```json
+{
+  \"issues\": [],
+  \"severity\": \"low\",
+  \"cross_references\": 0,
+  \"naming_conflicts\": 0
+}
+```"""
+
+    parsed = workflow._parse_json_response("consistency_checker", raw)
+
+    assert parsed == {
+        "issues": [],
+        "severity": "low",
+        "cross_references": 0,
+        "naming_conflicts": 0,
+    }

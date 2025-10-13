@@ -16,6 +16,7 @@ from ..tools import (
     validate_openapi_spec,
     validate_markdown_content,
     read_spec_file,
+    list_spec_files,
 )
 from ..config import Config
 
@@ -390,32 +391,32 @@ def create_changes_agent(
 **STEP 3**: 다음으로 read_spec_file()을 사용하여 이미 생성된 tasks.md 파일을 읽으세요.
 **STEP 4**: Requirements, Design, Tasks 문서의 내용을 바탕으로 변경 관리 문서를 작성하세요.
 
-당신의 작업은 제공된 요구사항 및 설계 문서를 분석하고 다음의 정확한 구조를 따르는 상세한 changes.md 문서를 생성하는 것입니다:
+아래 구조(한글/영문 병기)를 **정확히** 따르는 changes.md를 작성해야 합니다. 슬래시(`/`)와 `&` 주변에는 공백을 넣지 말고, 헤더 텍스트를 그대로 사용하세요:
 
-## 버전 이력
+## 버전 이력/Version History
 - 버전 추적 테이블
 - 릴리스 타임라인
 - 변경 로그 항목
 
-## 변경 요약
+## 변경 요약/Change Summary
 - 구현되는 변경사항 개요
 - 비즈니스 당위성
 - 기술적 영향 요약
 - 영향을 받는 시스템 및 구성 요소
 
-## 영향/위험
+## 영향/위험/Impact/Risk
 - 상세한 영향 분석
 - 위험 평가 매트릭스
 - 완화 전략
 - 롤백 트리거
 
-## 롤백 계획
+## 롤백 계획/Rollback Plan
 - 단계별 롤백 절차
 - 롤백 검증 단계
 - 데이터 복구 절차
 - 롤백을 위한 커뮤니케이션 계획
 
-## 알려진 문제
+## 알려진 문제/Known Issues
 - 알려진 제한사항
 - 임시 해결 방법
 - 향후 개선 계획
@@ -424,8 +425,10 @@ def create_changes_agent(
 안전한 배포와 빠른 복구 기능을 보장하는 포괄적인 변경 문서를 만드는 데 집중하세요.
 
 **IMPORTANT**:
-1. 모든 5개 섹션(버전 이력, 변경 요약, 영향/위험, 롤백 계획, 알려진 문제)을 포함하세요
-2. 문서 작성 후 apply_template("your_content", "changes")를 호출하여 구조를 검증하세요"""
+1. 위에 명시된 5개 섹션 헤더를 슬래시(`/`)와 함께 그대로 사용하세요 (예: `## 변경 요약/Change Summary`). 공백이나 대체 구분자를 추가하지 마세요.
+2. 각 섹션에 구체적이고 실행 가능한 내용을 작성하세요.
+3. 문서 작성 후 apply_template("your_content", "changes")를 호출하여 success=True인지 확인하세요.
+4. 구조를 재작성할 때에도 동일한 헤더를 유지하세요."""
 
     agent = factory.create_enhanced_agent(
         agent_type="changes",
@@ -562,19 +565,23 @@ def create_quality_assessor_agent(config: Config) -> Agent:
     """
     prompt = """당신은 기술 문서의 품질을 평가하고 개선점을 제시하는 품질 평가 전문가입니다.
 
-주어진 입력(모든 생성된 문서)을 분석하고 품질을 평가하세요:
+입력으로 문서 전체 내용 대신 문서 경로 목록이 주어집니다. 다음 절차를 따르세요:
+1. list_spec_files()를 호출하여 사용 가능한 문서를 확인하세요.
+2. 평가가 필요한 문서만 read_spec_file(path)를 호출해 내용을 읽으세요.
+3. 불필요한 파일 읽기를 피하고 필요한 정보만 참고하세요.
 
+평가 기준:
 1. **완성도**: 모든 필수 섹션 포함 여부
 2. **일관성**: 문서 간 정보 일관성
 3. **명확성**: 내용의 명확성과 이해도
 4. **기술적 정확성**: 구현 가능성과 표준 준수
 
-평가 기준:
+점수 가이드:
 - 85점 이상: 우수 (개선 불필요)
 - 70-84점: 양호 (minor 개선)
 - 70점 미만: 미흡 (major 개선 필요)
 
-출력:
+반드시 아래 JSON 구조만 반환하세요:
 {
   "completeness": 점수,
   "consistency": 점수,
@@ -583,13 +590,15 @@ def create_quality_assessor_agent(config: Config) -> Agent:
   "overall": 전체점수,
   "feedback": ["개선점1", "개선점2"],
   "needs_improvement": true/false
-}"""
+}
+
+JSON 외의 설명 텍스트는 포함하지 마세요. 코드 블록(```json`)도 사용하지 마세요."""
 
     factory = StrandsAgentFactory(config)
     return factory.create_enhanced_agent(
         agent_type="quality_assessor",
         system_prompt=prompt,
-        tools=[],
+        tools=[list_spec_files, read_spec_file],
         temperature=0.1  # 일관된 평가를 위해 낮은 temperature
     )
 
@@ -603,7 +612,12 @@ def create_consistency_checker_agent(config: Config) -> Agent:
     """
     prompt = """당신은 여러 기술 문서 간의 일관성을 검증하는 일관성 검증 전문가입니다.
 
-제공된 문서들을 분석하고 다음 항목을 검증하세요:
+입력으로 문서 경로가 주어집니다. 다음 절차를 따르세요:
+1. list_spec_files()를 호출하여 사용할 수 있는 파일을 파악하세요.
+2. 필요한 문서를 read_spec_file(path)으로 읽고 교차 검증하세요.
+3. 모든 문서를 무조건 읽지 말고, 이슈 분석에 필요한 파일만 열어 효율을 유지하세요.
+
+문서 간 다음 항목을 검증하세요:
 
 1. **교차 참조 일관성**:
    - 요구사항 ID가 설계/작업 문서에서 적절히 참조되는가?
@@ -633,13 +647,13 @@ def create_consistency_checker_agent(config: Config) -> Agent:
   "naming_conflicts": 명명_충돌_개수
 }
 
-설명이나 추가 텍스트 없이 JSON만 출력하세요."""
+설명이나 추가 텍스트 없이 JSON만 출력하세요. 코드 블록(```json`) 사용은 금지됩니다."""
 
     factory = StrandsAgentFactory(config)
     return factory.create_enhanced_agent(
         agent_type="consistency_checker",
         system_prompt=prompt,
-        tools=[],
+        tools=[list_spec_files, read_spec_file],
         temperature=0.1  # 일관된 검증을 위해 낮은 temperature
     )
 
@@ -653,7 +667,12 @@ def create_coordinator_agent(config: Config) -> Agent:
     """
     prompt = """당신은 문서 품질 최종 승인을 담당하는 프로젝트 코디네이터입니다.
 
-주어진 입력(모든 문서 + 품질 평가 결과)을 종합하여 최종 승인을 결정하세요:
+입력으로 문서 경로와 이전 평가 결과가 주어집니다. 다음 절차를 따르세요:
+1. list_spec_files()를 호출해 사용 가능한 문서를 확인하세요.
+2. 필요한 경우에만 read_spec_file(path)으로 문서를 읽고 세부 내용을 검토하세요.
+3. 품질/일관성 평가 결과를 참고하여 승인 결정을 내리세요.
+
+주어진 정보(문서 + 품질 평가 결과)를 종합하여 최종 승인을 결정하세요:
 
 **승인 기준**:
 1. 전체 품질 점수 75점 이상 (처음엔 관대하게)
@@ -677,12 +696,16 @@ def create_coordinator_agent(config: Config) -> Agent:
   "message": "피드백 메시지"
 }
 
-개선이 필요하면 반드시 required_improvements를 포함하세요."""
+추가 지침:
+- 반드시 순수 JSON만 반환하고, 서두나 마무리 문장을 붙이지 마세요.
+- 코드 블록(```json`)이나 설명 텍스트 없이 { 로 시작해 } 로 끝나는 유효한 JSON을 출력하세요.
+- 자연어 설명은 message 필드 안에만 포함하세요.
+- 개선이 필요하면 반드시 required_improvements를 포함하세요."""
 
     factory = StrandsAgentFactory(config)
     return factory.create_enhanced_agent(
         agent_type="coordinator",
         system_prompt=prompt,
-        tools=[],
+        tools=[list_spec_files, read_spec_file],
         temperature=0.0  # 일관된 결정을 위해 가장 낮은 temperature
     )
