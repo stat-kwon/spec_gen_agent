@@ -22,6 +22,27 @@ def _get_logger(session_id: str | None = None) -> logging.LoggerAdapter | loggin
     return LOGGER
 
 
+def _normalize_heading_text(text: str) -> str:
+    """Normalize heading text for comparison.
+
+    Collapses whitespace, normalizes unicode punctuation, and lowercases so that
+    variations such as spaces around slashes (e.g. ``Impact / Risk``) or
+    full-width symbols (e.g. ``＆``) are treated equivalently.
+    """
+
+    normalized = unicodedata.normalize("NFKC", text)
+    normalized = re.sub(r"\s*/\s*", "/", normalized)
+    normalized = re.sub(r"\s*&\s*", "&", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip().lower()
+
+
+def _strip_heading_identifier(text: str) -> str:
+    """Create a compact identifier string for fuzzy heading comparison."""
+
+    return re.sub(r"[^0-9a-z가-힣/&]+", "", text)
+
+
 @tool
 def apply_template(
     content: str,
@@ -138,38 +159,78 @@ def apply_template(
 
         normalized_content = unicodedata.normalize("NFKC", content)
 
-        # Check for required sections (한글/영어 쌍으로 체크)
-        # 한글/영어가 쌍으로 있으므로 2개씩 묶어서 처리
+        # 한글/영문 섹션을 쌍으로 구성
         section_pairs = []
         for i in range(0, len(required_sections), 2):
             if i + 1 < len(required_sections):
                 section_pairs.append((required_sections[i], required_sections[i + 1]))
             else:
-                section_pairs.append((required_sections[i], required_sections[i]))  # 단일 섹션인 경우
-        
-        for korean_section, english_section in section_pairs:
-            # 한글 또는 영어 중 하나라도 찾으면 OK
-            heading_pattern = r"#{1,3}\s*.*"
-            korean_found = re.search(
-                heading_pattern + re.escape(korean_section),
-                normalized_content,
-                re.IGNORECASE,
-            )
-            english_found = re.search(
-                heading_pattern + re.escape(english_section),
-                normalized_content,
-                re.IGNORECASE,
-            )
+                section_pairs.append((required_sections[i], required_sections[i]))
 
-            if not korean_found and not english_found:
-                missing_sections.append(f"{korean_section}/{english_section}")
-
-        # Extract existing sections
-        found_sections = re.findall(
+        heading_matches = re.findall(
             r"^#{1,3}\s*(.+)$",
             normalized_content,
             re.MULTILINE,
         )
+        heading_infos = []
+        for match in heading_matches:
+            normalized_heading = _normalize_heading_text(match)
+            heading_infos.append(
+                {
+                    "original": match.strip(),
+                    "normalized": normalized_heading,
+                    "stripped": _strip_heading_identifier(normalized_heading),
+                }
+            )
+
+        for korean_section, english_section in section_pairs:
+            korean_norm = _normalize_heading_text(korean_section)
+            english_norm = _normalize_heading_text(english_section)
+            korean_stripped = _strip_heading_identifier(korean_norm)
+            english_stripped = _strip_heading_identifier(english_norm)
+
+            bilingual_present = any(
+                (
+                    korean_norm in info["normalized"]
+                    and english_norm in info["normalized"]
+                )
+                or (
+                    korean_stripped
+                    and english_stripped
+                    and korean_stripped in info["stripped"]
+                    and english_stripped in info["stripped"]
+                )
+                for info in heading_infos
+            )
+
+            korean_present = any(
+                korean_norm == info["normalized"]
+                or korean_norm in info["normalized"]
+                or (
+                    korean_stripped
+                    and korean_stripped in info["stripped"]
+                )
+                for info in heading_infos
+            )
+            english_present = any(
+                english_norm == info["normalized"]
+                or english_norm in info["normalized"]
+                or (
+                    english_stripped
+                    and english_stripped in info["stripped"]
+                )
+                for info in heading_infos
+            )
+
+            if template_type == "changes":
+                requirement_met = bilingual_present or (korean_present and english_present)
+            else:
+                requirement_met = bilingual_present or korean_present or english_present
+
+            if not requirement_met:
+                missing_sections.append(f"{korean_section}/{english_section}")
+
+        found_sections = [info["original"] for info in heading_infos]
 
         result = {
             "success": len(missing_sections) == 0,

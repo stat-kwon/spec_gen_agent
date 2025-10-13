@@ -391,7 +391,7 @@ def create_changes_agent(
 **STEP 3**: 다음으로 read_spec_file()을 사용하여 이미 생성된 tasks.md 파일을 읽으세요.
 **STEP 4**: Requirements, Design, Tasks 문서의 내용을 바탕으로 변경 관리 문서를 작성하세요.
 
-당신의 작업은 제공된 요구사항 및 설계 문서를 분석하고 다음의 **정확한** 구조(한글/영문 병기)를 따르는 상세한 changes.md 문서를 생성하는 것입니다. 각 섹션 헤더는 슬래시(`/`)로 구분된 아래 텍스트를 그대로 사용해야 합니다:
+아래 구조(한글/영문 병기)를 **정확히** 따르는 changes.md를 작성해야 합니다. 슬래시(`/`)와 `&` 주변에는 공백을 넣지 말고, 헤더 텍스트를 그대로 사용하세요:
 
 ## 버전 이력/Version History
 - 버전 추적 테이블
@@ -425,9 +425,10 @@ def create_changes_agent(
 안전한 배포와 빠른 복구 기능을 보장하는 포괄적인 변경 문서를 만드는 데 집중하세요.
 
 **IMPORTANT**:
-1. 위에 명시된 5개 섹션 헤더를 정확히 동일한 텍스트로 포함하세요 (예: `## 변경 요약/Change Summary`).
+1. 위에 명시된 5개 섹션 헤더를 슬래시(`/`)와 함께 그대로 사용하세요 (예: `## 변경 요약/Change Summary`). 공백이나 대체 구분자를 추가하지 마세요.
 2. 각 섹션에 구체적이고 실행 가능한 내용을 작성하세요.
-3. 문서 작성 후 apply_template("your_content", "changes")를 호출하여 구조를 검증하세요."""
+3. 문서 작성 후 apply_template("your_content", "changes")를 호출하여 success=True인지 확인하세요.
+4. 구조를 재작성할 때에도 동일한 헤더를 유지하세요."""
 
     agent = factory.create_enhanced_agent(
         agent_type="changes",

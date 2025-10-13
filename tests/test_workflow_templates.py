@@ -153,6 +153,32 @@ def test_apply_template_allows_headings_without_space():
     assert result["missing_sections"] == []
 
 
+def test_apply_template_changes_tolerates_spacing_variants():
+    content = """
+# changes
+
+## Version History / 버전 이력
+기존 릴리스 정보
+
+## 변경 요약 / Change Summary
+- 주요 변경사항 나열
+
+## 영향 / 위험 / Impact / Risk
+- 영향과 위험 요소
+
+## Rollback Plan / 롤백 계획
+- 롤백 프로세스
+
+## Known Issues / 알려진 문제
+- 알려진 이슈
+"""
+
+    result = apply_template(content, "changes")
+
+    assert result["success"] is True
+    assert result["missing_sections"] == []
+
+
 def test_parse_json_response_extracts_object_from_wrapped_text():
     config = Config(openai_api_key="test-key")
     workflow = SpecificationWorkflow(config=config)

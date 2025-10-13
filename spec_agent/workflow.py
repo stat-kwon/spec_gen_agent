@@ -529,14 +529,33 @@ FRS 내용:
 - Design: read_spec_file("{design_file}")
 - Tasks: read_spec_file("{tasks_file}")
 
-반드시 아래 섹션 헤더를 동일한 형태(한글/영문 병기)로 포함하세요:
-## 버전 이력/Version History
-## 변경 요약/Change Summary
-## 영향/위험/Impact/Risk
-## 롤백 계획/Rollback Plan
-## 알려진 문제/Known Issues
+반드시 아래 5개의 섹션 헤더를 **동일한 텍스트**(슬래시(`/`)와 `&` 주변에 공백 없이)로 포함하세요. 영어 혹은 한글만 출력하면 검증에 실패합니다.
+- ## 버전 이력/Version History
+- ## 변경 요약/Change Summary
+- ## 영향/위험/Impact/Risk
+- ## 롤백 계획/Rollback Plan
+- ## 알려진 문제/Known Issues
 
-각 섹션에 구체적인 내용을 작성하고, 목록이나 표를 활용해 배포 계획을 명확히 표현하세요."""
+샘플 구조:
+```
+## 버전 이력/Version History
+| 버전/Version | 릴리스 날짜/Release Date | 변경 사항/Change Description |
+|--------------|--------------------------|------------------------------|
+
+## 변경 요약/Change Summary
+- 항목...
+
+## 영향/위험/Impact/Risk
+- 항목...
+
+## 롤백 계획/Rollback Plan
+- 항목...
+
+## 알려진 문제/Known Issues
+- 항목...
+```
+
+각 섹션에 구체적이고 실행 가능한 내용을 채우고, 문서 작성 후 apply_template("<your_content>", "changes")가 success=True를 반환하는지 반드시 확인하세요."""
 
     def _build_openapi_prompt(self, requirements_result: Dict, design_result: Dict, output_dir: str) -> str:
         """OpenAPI 에이전트 프롬프트 - 파일 기반"""
