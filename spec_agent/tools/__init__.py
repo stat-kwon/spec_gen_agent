@@ -2,7 +2,12 @@
 
 from .frs_tools import load_frs_document, extract_frs_metadata
 from .template_tools import apply_template, validate_markdown_structure
-from .file_tools import write_spec_file, read_spec_file, create_output_directory
+from .file_tools import (
+    write_spec_file,
+    read_spec_file,
+    create_output_directory,
+    list_spec_files,
+)
 from .validation_tools import (
     validate_openapi_spec,
     validate_markdown_content,
@@ -17,6 +22,7 @@ __all__ = [
     "write_spec_file",
     "read_spec_file",
     "create_output_directory",
+    "list_spec_files",
     "validate_openapi_spec",
     "validate_markdown_content",
     "create_git_branch",

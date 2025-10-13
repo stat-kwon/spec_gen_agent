@@ -529,13 +529,14 @@ FRS 내용:
 - Design: read_spec_file("{design_file}")
 - Tasks: read_spec_file("{tasks_file}")
 
-요구사항:
-1. 버전 이력
-2. 변경 사항 요약
-3. 영향도 및 위험 분석
-4. 롤백 계획
-5. 알려진 이슈
-6. 한국어로 작성"""
+반드시 아래 섹션 헤더를 동일한 형태(한글/영문 병기)로 포함하세요:
+## 버전 이력/Version History
+## 변경 요약/Change Summary
+## 영향/위험/Impact/Risk
+## 롤백 계획/Rollback Plan
+## 알려진 문제/Known Issues
+
+각 섹션에 구체적인 내용을 작성하고, 목록이나 표를 활용해 배포 계획을 명확히 표현하세요."""
 
     def _build_openapi_prompt(self, requirements_result: Dict, design_result: Dict, output_dir: str) -> str:
         """OpenAPI 에이전트 프롬프트 - 파일 기반"""
@@ -590,37 +591,39 @@ Output pure JSON only - no text before or after."""
         return documents
 
     def _format_documents_for_review(self, documents: Dict[str, Dict[str, str]]) -> str:
-        """품질 에이전트에 전달할 문서 내용을 포맷팅합니다."""
+        """품질 에이전트에 전달할 문서 메타데이터를 포맷팅합니다."""
 
-        sections: List[str] = []
+        output_dir = self.context.get('project', {}).get('output_dir', '')
+        lines: List[str] = [f"검토 대상 문서 목록 (output_dir={output_dir}):"]
         for agent_name in ['requirements', 'design', 'tasks', 'changes', 'openapi']:
             doc = documents.get(agent_name)
             if not doc:
                 continue
 
-            title = f"{agent_name}.md" if agent_name != 'openapi' else 'openapi.json'
-            sections.append(
-                f"# {title}\n경로: {doc['path']}\n\n{doc['content']}"
-            )
+            title = 'openapi.json' if agent_name == 'openapi' else f"{agent_name}.md"
+            lines.append(f"- {title}: {doc['path']}")
 
-        return "\n\n".join(sections)
+        return "\n".join(lines)
 
     def _build_quality_review_prompt(self, review_payload: str) -> str:
         """품질 평가 에이전트 프롬프트를 구성합니다."""
 
         return (
-            "다음은 생성된 명세 문서들의 전체 내용입니다. 각 문서를 분석하여 품질을 평가하고 JSON으로 결과를 반환하세요.\n\n"
+            "다음은 생성된 명세 문서 목록입니다. 각 문서의 실제 내용은 read_spec_file(path) 도구를 사용해 필요한 것만 읽으세요.\n"
+            f"list_spec_files(\"{self.context.get('project', {}).get('output_dir', '')}\")를 호출하면 최신 파일 목록을 확인할 수 있습니다.\n\n"
             f"{review_payload}\n\n"
-            "JSON 필수 키: completeness, consistency, clarity, technical, overall, feedback (리스트), needs_improvement (불리언)."
+            "평가 후 반드시 JSON으로만 응답하세요. 필수 키: completeness, consistency, clarity, technical, overall, feedback (리스트), needs_improvement (불리언)."
         )
 
     def _build_consistency_review_prompt(self, review_payload: str) -> str:
         """일관성 검증 에이전트 프롬프트를 구성합니다."""
 
         return (
-            "아래는 요구사항, 설계, 작업, 변경, OpenAPI 문서입니다. 문서 간 일관성을 검토하고 JSON으로만 응답하세요.\n\n"
+            "다음 문서 목록을 바탕으로 교차 검증을 수행하세요. 실제 내용은 필요한 문서만 read_spec_file(path)로 읽어 일관성을 확인하세요.\n"
+            f"list_spec_files(\"{self.context.get('project', {}).get('output_dir', '')}\") 호출로 파일 현황을 확인할 수 있습니다.\n"
+            "검토 후 JSON으로만 응답하세요.\n\n"
             f"{review_payload}\n\n"
-            "JSON 키: issues (리스트), severity (low|medium|high), cross_references (정수), naming_conflicts (정수)."
+            "필수 JSON 키: issues (리스트), severity (low|medium|high), cross_references (정수), naming_conflicts (정수)."
         )
 
     def _build_coordinator_prompt(
@@ -642,9 +645,11 @@ Output pure JSON only - no text before or after."""
             else str(consistency_result)
         )
 
+        output_dir = self.context.get('project', {}).get('output_dir', '')
         return (
-            "다음은 생성된 문서와 품질/일관성 평가 결과입니다. 최종 승인 여부를 JSON으로 판단하세요.\n\n"
-            f"문서:\n{review_payload}\n\n"
+            "다음은 생성된 문서 경로와 이전 평가 결과입니다. 필요 시 read_spec_file(path)으로 세부 내용을 확인한 뒤 최종 승인 여부를 JSON으로 판단하세요.\n"
+            f"list_spec_files(\"{output_dir}\") 호출로 최신 문서 목록을 다시 확인할 수 있습니다.\n\n"
+            f"문서 목록:\n{review_payload}\n\n"
             f"품질 평가 결과:\n{quality_json}\n\n"
             f"일관성 평가 결과:\n{consistency_json}\n\n"
             "JSON 키: approved (불리언), overall_quality (숫자), decision, required_improvements (리스트), message."
