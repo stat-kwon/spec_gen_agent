@@ -24,6 +24,7 @@ class Config(BaseModel):
 
     # 출력 설정
     default_output_dir: str = os.getenv("DEFAULT_OUTPUT_DIR", "specs")
+    log_level: str = os.getenv("SPEC_AGENT_LOG_LEVEL", "INFO")
 
     # Git 설정
     git_branch_prefix: str = os.getenv("GIT_BRANCH_PREFIX", "specgen/scenario-3")
