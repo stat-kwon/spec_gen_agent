@@ -469,10 +469,9 @@ def create_openapi_agent(
         client_args={"api_key": config.openai_api_key},
     )
 
-    agent = Agent(
-        model=openai_model,
-        tools=[validate_openapi_spec],
-        system_prompt=prompt,
+
+    return Agent(
+        model=openai_model, tools=[], system_prompt=prompt
     )
 
     logger.info("OpenAPI 에이전트 준비 완료")

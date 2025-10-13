@@ -3,6 +3,7 @@
 복잡한 state 관리 없이 필요한 기능만 포함
 """
 
+
 import inspect
 import logging
 from typing import Dict, Any, Optional, List
@@ -379,7 +380,8 @@ FRS 내용:
     
     def _build_design_prompt(self, requirements_result: Dict, service_type: str, output_dir: str) -> str:
         """설계 에이전트 프롬프트 - 파일 기반"""
-        requirements_file = str(Path(output_dir) / "requirements.md")
+        output_dir = self.context['project']['output_dir']
+        requirements_file = f"{output_dir}/requirements.md"
 
         return f"""다음 요구사항 파일을 읽어서 상세한 design.md를 생성하세요:
 
@@ -416,11 +418,16 @@ FRS 내용:
 
     def _build_changes_prompt(self, service_type: str, output_dir: str) -> str:
         """변경사항 에이전트 프롬프트"""
-        requirements_file = str(Path(output_dir) / "requirements.md")
-        design_file = str(Path(output_dir) / "design.md")
-        tasks_file = str(Path(output_dir) / "tasks.md")
+        output_dir = self.context['project']['output_dir']
+        requirements_file = f"{output_dir}/requirements.md"
+        design_file = f"{output_dir}/design.md"
+        tasks_file = f"{output_dir}/tasks.md"
+
 
         return f"""프로젝트 배포를 위한 상세한 changes.md를 생성하세요:
+
+요구사항 파일 경로: {requirements_file}
+설계 파일 경로: {design_file}
 
 서비스 유형: {service_type}
 
