@@ -591,7 +591,7 @@ def create_quality_assessor_agent(config: Config) -> Agent:
   "needs_improvement": true/false
 }
 
-JSON 외의 설명 텍스트는 포함하지 마세요."""
+JSON 외의 설명 텍스트는 포함하지 마세요. 코드 블록(```json`)도 사용하지 마세요."""
 
     factory = StrandsAgentFactory(config)
     return factory.create_enhanced_agent(
@@ -646,7 +646,7 @@ def create_consistency_checker_agent(config: Config) -> Agent:
   "naming_conflicts": 명명_충돌_개수
 }
 
-설명이나 추가 텍스트 없이 JSON만 출력하세요."""
+설명이나 추가 텍스트 없이 JSON만 출력하세요. 코드 블록(```json`) 사용은 금지됩니다."""
 
     factory = StrandsAgentFactory(config)
     return factory.create_enhanced_agent(
@@ -695,7 +695,11 @@ def create_coordinator_agent(config: Config) -> Agent:
   "message": "피드백 메시지"
 }
 
-개선이 필요하면 반드시 required_improvements를 포함하세요."""
+추가 지침:
+- 반드시 순수 JSON만 반환하고, 서두나 마무리 문장을 붙이지 마세요.
+- 코드 블록(```json`)이나 설명 텍스트 없이 { 로 시작해 } 로 끝나는 유효한 JSON을 출력하세요.
+- 자연어 설명은 message 필드 안에만 포함하세요.
+- 개선이 필요하면 반드시 required_improvements를 포함하세요."""
 
     factory = StrandsAgentFactory(config)
     return factory.create_enhanced_agent(

@@ -665,24 +665,36 @@ Output pure JSON only - no text before or after."""
             return response
 
         text = str(response).strip()
+        if not text:
+            return {}
+
         if text.startswith("```"):
             lines = text.splitlines()
             if lines and lines[0].startswith("```"):
                 first_line = lines.pop(0)
                 if first_line.lower().startswith("```json"):
-                    # Remove language hint
                     pass
             if lines and lines[-1].startswith("```"):
                 lines.pop()
             text = "\n".join(lines).strip()
 
+        decoder = json.JSONDecoder()
         try:
-            return json.loads(text)
+            return decoder.decode(text)
         except json.JSONDecodeError:
-            self._get_agent_logger(agent_name).warning(
-                "JSON 파싱 실패 - 원문을 raw_response로 저장합니다"
-            )
-            return {"raw_response": text}
+            # 선행/후행 자연어를 제거하고 첫 번째 JSON 오브젝트를 추출 시도
+            for idx, ch in enumerate(text):
+                if ch in "[{":
+                    try:
+                        parsed, _ = decoder.raw_decode(text[idx:])
+                        return parsed
+                    except json.JSONDecodeError:
+                        continue
+
+        self._get_agent_logger(agent_name).warning(
+            "JSON 파싱 실패 - 원문을 raw_response로 저장합니다"
+        )
+        return {"raw_response": text}
 
     def _should_continue_quality_loop(
         self,

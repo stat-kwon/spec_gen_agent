@@ -151,3 +151,43 @@ def test_apply_template_allows_headings_without_space():
 
     assert result["success"] is True
     assert result["missing_sections"] == []
+
+
+def test_parse_json_response_extracts_object_from_wrapped_text():
+    config = Config(openai_api_key="test-key")
+    workflow = SpecificationWorkflow(config=config)
+
+    raw = (
+        "아래는 개선된 결정입니다. 필요한 경우만 참고하세요. "
+        '{"approved": false, "overall_quality": 68, "decision": "개선필요", '
+        '"required_improvements": ["요구사항 섹션 강화"], "message": "추가 수정 필요"}'
+    )
+
+    parsed = workflow._parse_json_response("coordinator", raw)
+
+    assert parsed["approved"] is False
+    assert parsed["overall_quality"] == 68
+    assert parsed["required_improvements"] == ["요구사항 섹션 강화"]
+
+
+def test_parse_json_response_handles_code_fences():
+    config = Config(openai_api_key="test-key")
+    workflow = SpecificationWorkflow(config=config)
+
+    raw = """```json
+{
+  \"issues\": [],
+  \"severity\": \"low\",
+  \"cross_references\": 0,
+  \"naming_conflicts\": 0
+}
+```"""
+
+    parsed = workflow._parse_json_response("consistency_checker", raw)
+
+    assert parsed == {
+        "issues": [],
+        "severity": "low",
+        "cross_references": 0,
+        "naming_conflicts": 0,
+    }
