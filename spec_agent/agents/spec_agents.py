@@ -10,6 +10,7 @@ from ..tools import (
     write_spec_file,
     validate_openapi_spec,
     validate_markdown_content,
+    read_spec_file,
 )
 from ..config import Config
 
@@ -157,7 +158,8 @@ IMPORTANT:
 1. 반드시 load_frs_document를 먼저 호출하여 FRS 내용을 확인하세요
 2. 로드된 FRS의 모든 기능 요구사항을 반영하세요 (User Registration, Authentication, Profile Management, Authorization 등)
 3. 모든 7개 섹션을 포함하고, 각 섹션에 실질적인 내용을 작성하세요
-4. 피드백이 있으면 해당 섹션을 개선하되 전체 구조는 유지하세요"""
+4. 문서 작성 후 apply_template("your_content", "requirements")를 호출하여 구조를 검증하세요
+5. 피드백이 있으면 해당 섹션을 개선하되 전체 구조는 유지하세요"""
 
     return factory.create_enhanced_agent(
         agent_type="requirements",
@@ -182,9 +184,14 @@ def create_design_agent(config: Config) -> Agent:
     factory = StrandsAgentFactory(config)
     prompt = """당신은 요구사항 명세서로부터 상세한 기술 설계 문서를 작성하는 시니어 소프트웨어 아키텍트입니다.
 
+**STEP 1**: 먼저 load_frs_document()를 호출하여 원본 FRS 문서를 로드하세요.
+**STEP 2**: 그 다음 read_spec_file()을 사용하여 이미 생성된 requirements.md 파일을 읽으세요.
+           (일반적으로 specs/FRS-1/api/requirements.md 경로에 있습니다)
+**STEP 3**: FRS와 Requirements 문서의 내용을 바탕으로 구체적이고 상세한 설계를 작성하세요.
+
 **중요**: 당신은 DESIGN 문서만 작성합니다. Requirements 내용(REQ-001, REQ-002 등)은 절대 포함하지 마세요.
 
-당신의 작업은 제공된 요구사항을 분석하고 다음의 정확한 구조를 따르는 design.md 문서를 생성하는 것입니다:
+당신의 작업은 FRS와 Requirements를 분석하고 다음의 정확한 구조를 따르는 design.md 문서를 생성하는 것입니다:
 
 ## 아키텍처
 - 상위 레벨 시스템 아키텍처
@@ -232,12 +239,15 @@ def create_design_agent(config: Config) -> Agent:
 - 수용 기준
 - 기능 요구사항 목록
 
-**오직 Design 관련 내용만** 작성하세요."""
+**IMPORTANT**:
+1. 모든 6개 섹션(아키텍처, 시퀀스 다이어그램, 데이터 모델, API 계약, 보안 & 권한, 성능 목표)을 포함하세요
+2. 문서 작성 후 apply_template("your_content", "design")를 호출하여 구조를 검증하세요
+3. **오직 Design 관련 내용만** 작성하세요."""
 
     return factory.create_enhanced_agent(
         agent_type="design",
         system_prompt=prompt,
-        tools=[apply_template, validate_markdown_structure],
+        tools=[apply_template, validate_markdown_structure, read_spec_file],
         temperature=0.6  # 창의적 설계를 위해 약간 높은 temperature
     )
 
@@ -252,111 +262,9 @@ def create_tasks_agent(config: Config) -> Agent:
     factory = StrandsAgentFactory(config)
     prompt = """당신은 기술 설계를 실행 가능한 개발 작업으로 분해하는 애자일 프로젝트 관리자입니다.
 
-당신의 작업은 제공된 설계 문서를 분석하고 상세한 Epic/Story/Task 분해를 포함한 포괄적인 tasks.md 문서를 생성하는 것입니다.
-
-다음 형식의 구조화된 테이블을 생성하세요:
-
-## 에픽
-| 에픽 ID | 제목 | 설명 | 비즈니스 가치 | 수용 기준 |
-|---------|-------|-------------|----------------|-------------------|
-| E-001   | ...   | ...         | ...            | ...               |
-
-## 스토리
-| 스토리 ID | 에픽 ID | 제목 | 설명 | 수용 기준 | 스토리 포인트 | 우선순위 |
-|----------|---------|-------|-------------|-------------------|--------------|----------|
-| S-001    | E-001   | ...   | ...         | ...               | 5            | 높음     |
-
-## 태스크
-| 태스크 ID | 스토리 ID | 제목 | 설명 | 담당자 | 예상 시간 | 종속성 |
-|---------|----------|-------|-------------|----------|----------|--------------|
-| T-001   | S-001    | ...   | ...         | Dev      | 4h       | 없음         |
-
-## DoD (완료 정의)
-다음을 포함한 포괄적인 체크리스트를 작성하세요:
-- [ ] 코드 구현 완료
-- [ ] 단위 테스트 작성 및 통과
-- [ ] 통합 테스트 통과
-- [ ] 코드 리뷰 완료
-- [ ] 문서 업데이트
-- [ ] 보안 검토 완료
-- [ ] 성능 테스트 완료
-
-개발 팀 멤버에게 직접 할당할 수 있는 세분화되고 실행 가능한 작업을 만드는 데 집중하세요."""
-
-    return factory.create_enhanced_agent(
-        agent_type="tasks",
-        system_prompt=prompt,
-        tools=[apply_template, validate_markdown_structure]
-    )
-
-
-def create_changes_agent_simple(config: Config) -> Agent:
-    """Simple changes 에이전트 - 빠른 테스트용 (컨텍스트 자동 수신)"""
-    factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 변경 관리를 하는 에이전트입니다.
-
-**중요**: 당신은 CHANGES 문서만 작성합니다. Requirements나 Design 내용은 절대 포함하지 마세요.
-
-FRS 정보를 바탕으로 핵심 변경사항 정보만 간단히 작성하세요:
-
-형식:
-## 변경 요약
-- 주요 변경사항: [1줄 설명]
-- 배포 방식: [1줄 설명]
-- 위험도: [낮음/중간/높음]
-
-**절대 포함하지 말 것**:
-- Requirements 섹션 (REQ-001 등)
-- Design 아키텍처
-- 기능 요구사항 목록
-- API 명세"""
-
-    return factory.create_enhanced_agent(
-        agent_type="changes",
-        system_prompt=prompt,
-        tools=[apply_template],
-        temperature=0.2
-    )
-
-
-def create_openapi_agent_simple(config: Config) -> Agent:
-    """Simple openapi 에이전트 - 빠른 테스트용 (컨텍스트 자동 수신)"""
-    factory = StrandsAgentFactory(config)
-    prompt = """당신은 간단한 API 명세를 작성하는 에이전트입니다.
-
-**중요**: 당신은 API 명세만 작성합니다. Requirements나 Design 내용은 절대 포함하지 마세요.
-
-FRS를 바탕으로 핵심 API 엔드포인트만 간단히 작성하세요:
-
-형식:
-## API 엔드포인트
-- POST /auth/register - 사용자 등록
-- POST /auth/login - 로그인
-- GET /users/profile - 프로필 조회
-
-**절대 포함하지 말 것**:
-- Requirements 섹션 (REQ-001 등)
-- Design 아키텍처
-- 변경 관리 정보
-- Tasks 정보"""
-
-    return factory.create_enhanced_agent(
-        agent_type="openapi",
-        system_prompt=prompt,
-        tools=[],
-        temperature=0.2
-    )
-
-
-def create_tasks_agent(config: Config) -> Agent:
-    """
-    Strands SDK의 고급 기능을 활용한 작업 분해 에이전트 생성.
-
-    Returns:
-        향상된 작업 생성 Strands Agent
-    """
-    factory = StrandsAgentFactory(config)
-    prompt = """당신은 기술 설계를 실행 가능한 개발 작업으로 분해하는 애자일 프로젝트 관리자입니다.
+**STEP 1**: 먼저 read_spec_file()을 사용하여 이미 생성된 requirements.md 파일을 읽으세요.
+**STEP 2**: 그 다음 read_spec_file()을 사용하여 이미 생성된 design.md 파일을 읽으세요.
+**STEP 3**: Requirements와 Design 문서의 내용을 바탕으로 상세한 Epic/Story/Task 분해를 수행하세요.
 
 당신의 작업은 제공된 설계 문서를 분석하고 상세한 Epic/Story/Task 분해를 포함한 포괄적인 tasks.md 문서를 생성하는 것입니다.
 
@@ -387,12 +295,16 @@ def create_tasks_agent(config: Config) -> Agent:
 - [ ] 보안 검토 완료
 - [ ] 성능 테스트 완료
 
-개발 팀 멤버에게 직접 할당할 수 있는 세분화되고 실행 가능한 작업을 만드는 데 집중하세요."""
+개발 팀 멤버에게 직접 할당할 수 있는 세분화되고 실행 가능한 작업을 만드는 데 집중하세요.
+
+**IMPORTANT**:
+1. 모든 4개 섹션(에픽, 스토리, 태스크, DoD)을 포함하세요
+2. 문서 작성 후 apply_template("your_content", "tasks")를 호출하여 구조를 검증하세요"""
 
     return factory.create_enhanced_agent(
         agent_type="tasks",
         system_prompt=prompt,
-        tools=[apply_template, validate_markdown_structure]
+        tools=[apply_template, validate_markdown_structure, read_spec_file]
     )
 
 
@@ -405,6 +317,11 @@ def create_changes_agent(config: Config) -> Agent:
     """
     factory = StrandsAgentFactory(config)
     prompt = """당신은 소프트웨어 배포를 위한 포괄적인 변경 관리 문서를 작성하는 DevOps 변경 관리자입니다.
+
+**STEP 1**: 먼저 read_spec_file()을 사용하여 이미 생성된 requirements.md 파일을 읽으세요.
+**STEP 2**: 그 다음 read_spec_file()을 사용하여 이미 생성된 design.md 파일을 읽으세요.
+**STEP 3**: 다음으로 read_spec_file()을 사용하여 이미 생성된 tasks.md 파일을 읽으세요.
+**STEP 4**: Requirements, Design, Tasks 문서의 내용을 바탕으로 변경 관리 문서를 작성하세요.
 
 당신의 작업은 제공된 요구사항 및 설계 문서를 분석하고 다음의 정확한 구조를 따르는 상세한 changes.md 문서를 생성하는 것입니다:
 
@@ -437,12 +354,16 @@ def create_changes_agent(config: Config) -> Agent:
 - 향후 개선 계획
 - 모니터링 권장사항
 
-안전한 배포와 빠른 복구 기능을 보장하는 포괄적인 변경 문서를 만드는 데 집중하세요."""
+안전한 배포와 빠른 복구 기능을 보장하는 포괄적인 변경 문서를 만드는 데 집중하세요.
+
+**IMPORTANT**:
+1. 모든 5개 섹션(버전 이력, 변경 요약, 영향/위험, 롤백 계획, 알려진 문제)을 포함하세요
+2. 문서 작성 후 apply_template("your_content", "changes")를 호출하여 구조를 검증하세요"""
 
     return factory.create_enhanced_agent(
         agent_type="changes",
         system_prompt=prompt,
-        tools=[apply_template, validate_markdown_structure]
+        tools=[apply_template, validate_markdown_structure, read_spec_file]
     )
 
 

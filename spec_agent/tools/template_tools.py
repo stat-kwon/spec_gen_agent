@@ -20,36 +20,38 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
     try:
         template_structures = {
             "requirements": [
-                "헤더/메타",  # 한국어 버전도 지원
-                "Header/Meta",
-                "범위",
-                "Scope", 
-                "기능 요구사항",
-                "Functional Requirements",
-                "오류 요구사항", 
-                "Error Requirements",
-                "보안 & 개인정보",
-                "Security & Privacy",
-                "관측 가능성",
-                "Observability",
-                "수용 기준",
-                "Acceptance Criteria",
+                # 한글/영어 모두 지원
+                "헤더/메타", "Header/Meta",
+                "범위", "Scope", 
+                "기능 요구사항", "Functional Requirements",
+                "오류 요구사항", "Error Requirements",
+                "보안 & 개인정보", "Security & Privacy",
+                "관측 가능성", "Observability",
+                "수용 기준", "Acceptance Criteria",
             ],
             "design": [
-                "Architecture",
-                "Sequence Diagram",
-                "Data Model",
-                "API Contract",
-                "Security & Permissions",
-                "Performance Goals",
+                # 한글/영어 모두 지원
+                "아키텍처", "Architecture",
+                "시퀀스 다이어그램", "Sequence Diagram",
+                "데이터 모델", "Data Model", 
+                "API 계약", "API Contract",
+                "보안 & 권한", "Security & Permissions",
+                "성능 목표", "Performance Goals",
             ],
-            "tasks": ["Epic", "Story", "Task", "DoD"],
+            "tasks": [
+                # 한글/영어 모두 지원
+                "에픽", "Epic", 
+                "스토리", "Story", 
+                "태스크", "Task", 
+                "DoD"  # DoD는 공통
+            ],
             "changes": [
-                "Version History",
-                "Change Summary",
-                "Impact/Risk",
-                "Rollback Plan",
-                "Known Issues",
+                # 한글/영어 모두 지원
+                "버전 이력", "Version History",
+                "변경 요약", "Change Summary", 
+                "영향/위험", "Impact/Risk",
+                "롤백 계획", "Rollback Plan",
+                "알려진 문제", "Known Issues",
             ],
         }
 
@@ -62,12 +64,22 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
         required_sections = template_structures[template_type]
         missing_sections = []
 
-        # Check for required sections
-        for section in required_sections:
-            if not re.search(
-                rf"#{1,3}\s+.*{re.escape(section)}", content, re.IGNORECASE
-            ):
-                missing_sections.append(section)
+        # Check for required sections (한글/영어 쌍으로 체크)
+        # 한글/영어가 쌍으로 있으므로 2개씩 묶어서 처리
+        section_pairs = []
+        for i in range(0, len(required_sections), 2):
+            if i + 1 < len(required_sections):
+                section_pairs.append((required_sections[i], required_sections[i + 1]))
+            else:
+                section_pairs.append((required_sections[i], required_sections[i]))  # 단일 섹션인 경우
+        
+        for korean_section, english_section in section_pairs:
+            # 한글 또는 영어 중 하나라도 찾으면 OK
+            korean_found = re.search(r"#{1,3}\s+.*" + re.escape(korean_section), content, re.IGNORECASE)
+            english_found = re.search(r"#{1,3}\s+.*" + re.escape(english_section), content, re.IGNORECASE)
+            
+            if not korean_found and not english_found:
+                missing_sections.append(f"{korean_section}/{english_section}")
 
         # Extract existing sections
         found_sections = re.findall(r"^#{1,3}\s+(.+)$", content, re.MULTILINE)
@@ -79,8 +91,8 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
             "required_sections": required_sections,
             "found_sections": found_sections,
             "missing_sections": missing_sections,
-            "compliance_score": (len(required_sections) - len(missing_sections))
-            / len(required_sections),
+            "compliance_score": (len(section_pairs) - len(missing_sections))
+            / len(section_pairs),
         }
 
     except Exception as e:
