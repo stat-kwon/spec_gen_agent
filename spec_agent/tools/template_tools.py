@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from typing import Dict, Any, List
 
 from strands import tool
@@ -135,6 +136,8 @@ def apply_template(
         required_sections = template_structures[template_type]
         missing_sections = []
 
+        normalized_content = unicodedata.normalize("NFKC", content)
+
         # Check for required sections (한글/영어 쌍으로 체크)
         # 한글/영어가 쌍으로 있으므로 2개씩 묶어서 처리
         section_pairs = []
@@ -146,14 +149,27 @@ def apply_template(
         
         for korean_section, english_section in section_pairs:
             # 한글 또는 영어 중 하나라도 찾으면 OK
-            korean_found = re.search(r"#{1,3}\s+.*" + re.escape(korean_section), content, re.IGNORECASE)
-            english_found = re.search(r"#{1,3}\s+.*" + re.escape(english_section), content, re.IGNORECASE)
-            
+            heading_pattern = r"#{1,3}\s*.*"
+            korean_found = re.search(
+                heading_pattern + re.escape(korean_section),
+                normalized_content,
+                re.IGNORECASE,
+            )
+            english_found = re.search(
+                heading_pattern + re.escape(english_section),
+                normalized_content,
+                re.IGNORECASE,
+            )
+
             if not korean_found and not english_found:
                 missing_sections.append(f"{korean_section}/{english_section}")
 
         # Extract existing sections
-        found_sections = re.findall(r"^#{1,3}\s+(.+)$", content, re.MULTILINE)
+        found_sections = re.findall(
+            r"^#{1,3}\s*(.+)$",
+            normalized_content,
+            re.MULTILINE,
+        )
 
         result = {
             "success": len(missing_sections) == 0,
