@@ -142,12 +142,7 @@ specs/FRS-*/api/
 specs/FRS-*/web/
 !specs/FRS-1.md
 
-# Test files
-test.py
-test_*.py
-*_test.py
-tests/
-test/
+# Tests are tracked in version control
 
 # Logs
 *.log

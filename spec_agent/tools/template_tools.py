@@ -1,5 +1,6 @@
 """템플릿 처리 및 검증 도구들."""
 
+import json
 import re
 from typing import Dict, Any, List
 from strands import tool
@@ -55,10 +56,50 @@ def apply_template(content: str, template_type: str) -> Dict[str, Any]:
             ],
         }
 
+        if template_type == "openapi":
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError as exc:
+                return {
+                    "success": False,
+                    "error": f"Invalid JSON: {exc.msg}",
+                    "template_type": template_type,
+                    "content": content,
+                    "required_sections": ["openapi", "info", "paths"],
+                    "found_sections": [],
+                    "missing_sections": ["openapi", "info", "paths"],
+                    "compliance_score": 0.0,
+                }
+
+            required_fields = ["openapi", "info", "paths"]
+            optional_fields = ["components", "servers"]
+            missing_fields = [field for field in required_fields if field not in parsed]
+            found_fields = list(parsed.keys())
+
+            total_fields = len(required_fields)
+            compliance = (total_fields - len(missing_fields)) / total_fields if total_fields else 1.0
+
+            return {
+                "success": len(missing_fields) == 0,
+                "content": content,
+                "template_type": template_type,
+                "required_sections": required_fields,
+                "optional_sections": optional_fields,
+                "found_sections": found_fields,
+                "missing_sections": missing_fields,
+                "compliance_score": compliance,
+            }
+
         if template_type not in template_structures:
             return {
                 "success": False,
                 "error": f"Unknown template type: {template_type}",
+                "content": content,
+                "template_type": template_type,
+                "required_sections": [],
+                "found_sections": [],
+                "missing_sections": [],
+                "compliance_score": 0.0,
             }
 
         required_sections = template_structures[template_type]

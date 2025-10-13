@@ -19,7 +19,8 @@ from .tools import (
     create_git_branch,
     commit_changes,
     validate_markdown_structure,
-    validate_openapi_spec
+    validate_openapi_spec,
+    apply_template,
 )
 from .agents.spec_agents import (
     create_requirements_agent,
@@ -50,9 +51,12 @@ class SpecificationWorkflow:
         # 간단한 상태 관리
         self.context = {
             'project': {},
-            'documents': {},
+            'documents': {
+                'previous_contents': {},
+                'template_results': {},
+            },
             'quality': {},
-            'metrics': {}
+            'metrics': {},
         }
         
         # 에이전트 컨테이너
@@ -200,7 +204,8 @@ class SpecificationWorkflow:
             req_prompt = self._build_requirements_prompt(frs_content, service_type.value, {})
             req_result = self.agents['requirements'](req_prompt)
             req_content = self._process_agent_result('requirements', req_result)
-            
+            self._validate_and_record_template('requirements', req_content)
+
             save_result = self._save_agent_document_sync('requirements', req_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
@@ -210,7 +215,8 @@ class SpecificationWorkflow:
             design_prompt = self._build_design_prompt({}, service_type.value)
             design_result = self.agents['design'](design_prompt)
             design_content = self._process_agent_result('design', design_result)
-            
+            self._validate_and_record_template('design', design_content)
+
             save_result = self._save_agent_document_sync('design', design_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
@@ -220,7 +226,8 @@ class SpecificationWorkflow:
             tasks_prompt = self._build_tasks_prompt({})
             tasks_result = self.agents['tasks'](tasks_prompt)
             tasks_content = self._process_agent_result('tasks', tasks_result)
-            
+            self._validate_and_record_template('tasks', tasks_content)
+
             save_result = self._save_agent_document_sync('tasks', tasks_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
@@ -230,7 +237,8 @@ class SpecificationWorkflow:
             changes_prompt = self._build_changes_prompt(service_type.value)
             changes_result = self.agents['changes'](changes_prompt)
             changes_content = self._process_agent_result('changes', changes_result)
-            
+            self._validate_and_record_template('changes', changes_content)
+
             save_result = self._save_agent_document_sync('changes', changes_content)
             if save_result:
                 saved_files.append(save_result['file_path'])
@@ -241,7 +249,8 @@ class SpecificationWorkflow:
                 openapi_prompt = self._build_openapi_prompt({}, {})
                 openapi_result = self.agents['openapi'](openapi_prompt)
                 openapi_content = self._process_agent_result('openapi', openapi_result)
-                
+                self._validate_and_record_template('openapi', openapi_content)
+
                 save_result = self._save_agent_document_sync('openapi', openapi_content)
                 if save_result:
                     saved_files.append(save_result['file_path'])
@@ -390,7 +399,7 @@ Output pure JSON only - no text before or after."""
     def _process_agent_result(self, agent_name: str, result: Any) -> str:
         """에이전트 결과 처리"""
         result_str = str(result)
-        
+
         # OpenAPI JSON인 경우 마크다운 블록 제거
         if agent_name == 'openapi':
             # ```json 블록 제거
@@ -401,15 +410,51 @@ Output pure JSON only - no text before or after."""
             if result_str.endswith('```'):
                 result_str = result_str[:-3]
             result_str = result_str.strip()
-        
+
         return result_str
-    
-    
+
+
+    def _validate_and_record_template(self, agent_name: str, content: str) -> Dict[str, Any]:
+        """apply_template 도구로 결과를 검증하고 컨텍스트에 저장"""
+
+        template_type = 'openapi' if agent_name == 'openapi' else agent_name
+
+        try:
+            template_result = apply_template(content, template_type)
+        except Exception as e:
+            print(f"  ❌ {agent_name} 템플릿 검증 도구 호출 실패: {str(e)}")
+            raise
+
+        # 컨텍스트에 결과 기록
+        self.context['documents'].setdefault('previous_contents', {})[agent_name] = content
+        self.context['documents'].setdefault('template_results', {})[agent_name] = template_result
+        self.context['metrics'].setdefault('template_checks', {})[agent_name] = template_result
+
+        if not isinstance(template_result, dict):
+            raise ValueError(f"템플릿 검증 결과가 올바르지 않습니다: {template_result}")
+
+        if not template_result.get('success', False):
+            missing_sections = template_result.get('missing_sections', [])
+            error_message = template_result.get('error')
+            detail = ''
+            if error_message:
+                detail = error_message
+            elif missing_sections:
+                detail = f"누락된 섹션: {', '.join(missing_sections)}"
+            else:
+                detail = "템플릿 검증에 실패했습니다."
+
+            print(f"  ❌ {agent_name} 템플릿 검증 실패: {detail}")
+            raise ValueError(f"{agent_name} 템플릿 검증 실패: {detail}")
+
+        return template_result
+
+
     async def _save_agent_document(self, agent_name: str, content: str) -> Optional[Dict[str, Any]]:
         """개별 에이전트 문서 즉시 저장 (비동기 버전)"""
         try:
             output_dir = self.context['project']['output_dir']
-            
+
             # 파일명 결정
             if agent_name == 'openapi':
                 filename = 'apis.json'
@@ -500,11 +545,13 @@ Output pure JSON only - no text before or after."""
                 try:
                     # Graph의 노드에서 결과 가져오기
                     node_result = self._get_node_result(graph, node_name)
-                    
+
                     if node_result:
                         # 결과 텍스트 처리
                         processed_result = self._process_agent_result(node_name, node_result)
-                        
+
+                        self._validate_and_record_template(node_name, processed_result)
+
                         # 파일 저장
                         save_result = self._save_agent_document_sync(node_name, processed_result)
                         if save_result:
@@ -566,18 +613,20 @@ Output pure JSON only - no text before or after."""
             for agent_name in remaining_agents:
                 try:
                     print(f"🔄 {agent_name} 문서 생성 중...")
-                    
+
                     # 에이전트별 프롬프트 생성
                     prompt = self._build_agent_prompt_from_previous(agent_name, current_content, service_type.value)
-                    
+
                     # 에이전트 실행
                     agent = self.agents[agent_name]
                     result = agent(prompt)
-                    
+
                     # 결과 처리
                     result_text = self._process_agent_result(agent_name, result)
                     current_content[agent_name] = result_text
-                    
+
+                    self._validate_and_record_template(agent_name, result_text)
+
                     # 파일 저장
                     save_result = self._save_agent_document_sync(agent_name, result_text)
                     if save_result:
