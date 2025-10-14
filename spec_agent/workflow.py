@@ -11,6 +11,7 @@ from pathlib import Path
 import time
 import json
 import re
+from textwrap import dedent
 
 
 from .config import Config
@@ -18,7 +19,6 @@ from .models import ServiceType
 from .logging_utils import configure_logging, get_agent_logger, get_session_logger
 from .tools import (
     load_frs_document,
-    write_spec_file,
     create_git_branch,
     commit_changes,
     validate_markdown_structure,
@@ -438,77 +438,72 @@ class SpecificationWorkflow:
     
     
     
-    def _build_requirements_prompt(self, frs_content: str, service_type: str, results: Dict) -> str:
+    def _build_requirements_prompt(self, _frs_content: str, service_type: str, results: Dict) -> str:
         """요구사항 에이전트 프롬프트"""
-        # 재작업인 경우 이전 피드백 포함
-        feedback_section = ""
+        frs_path = self.context.get('project', {}).get('frs_path', 'specs/FRS-1.md')
+
+        feedback_lines: List[str] = []
         if 'coordinator' in results:
             try:
                 coordinator_data = json.loads(results['coordinator'].get('content', '{}'))
                 improvements = coordinator_data.get('required_improvements', [])
-                if improvements:
-                    feedback_section = f"""
-이전 피드백:
-{chr(10).join(f"- {improvement}" for improvement in improvements)}
-
-위 피드백을 반영하여 개선된 요구사항을 작성하세요.
-"""
-            except:
+                feedback_lines = [f"- {improvement}" for improvement in improvements]
+            except Exception:
                 pass
-        
-        return f"""다음 FRS 문서를 분석하여 상세한 requirements.md를 생성하세요:
 
-FRS 내용:
-{frs_content}
+        feedback_section = ""
+        if feedback_lines:
+            feedback_section = "\n".join(
+                ["이전 피드백:", *feedback_lines, "", "위 피드백을 반영하여 문서를 업데이트하세요."]
+            )
 
-서비스 유형: {service_type}
+        prompt = dedent(
+            f"""
+            프로젝트 컨텍스트:
+            - 서비스 유형: {service_type}
+            - FRS 파일 경로: {frs_path}
 
-{feedback_section}
+            FRS 내용을 확인하려면 load_frs_document("{frs_path}")를 호출하세요.
+            시스템 프롬프트의 지침에 따라 requirements.md를 작성하세요.
+            """
+        ).strip()
 
-요구사항:
-1. 구조화된 requirements.md 형식으로 작성
-2. 명확한 요구사항 ID 체계 사용 (REQ-001, REQ-002 등)
-3. 기능/비기능/기술 요구사항 분리
-4. 수용 기준 포함
-5. 한국어로 작성"""
+        if feedback_section:
+            prompt = f"{prompt}\n\n{feedback_section}"
+
+        return prompt
     
-    def _build_design_prompt(self, requirements_result: Dict, service_type: str, output_dir: str) -> str:
+    def _build_design_prompt(self, _requirements_result: Dict, service_type: str, output_dir: str) -> str:
         """설계 에이전트 프롬프트 - 파일 기반"""
         output_dir = self.context['project']['output_dir']
         requirements_file = f"{output_dir}/requirements.md"
 
-        return f"""다음 요구사항 파일을 읽어서 상세한 design.md를 생성하세요:
+        return dedent(
+            f"""
+            프로젝트 컨텍스트:
+            - 서비스 유형: {service_type}
+            - Requirements 문서 경로: {requirements_file}
 
-요구사항 파일을 확인하려면 read_spec_file("{requirements_file}")를 호출하세요.
-서비스 유형: {service_type}
+            설계 작성 전에 read_spec_file("{requirements_file}")로 요구사항을 확인한 후,
+            시스템 프롬프트의 지침에 맞춰 design.md를 작성하세요.
+            """
+        ).strip()
 
-요구사항:
-1. 시스템 아키텍처 설계
-2. Mermaid 시퀀스 다이어그램 포함 (```mermaid 블록)
-3. 데이터 모델 정의
-4. API 계약 설계
-5. 보안 및 성능 고려사항
-6. 한국어로 작성
-
-지침: read_spec_file("{requirements_file}")로 불러온 내용을 바탕으로 설계 문서를 작성하세요."""
-
-    def _build_tasks_prompt(self, design_result: Dict, output_dir: str) -> str:
+    def _build_tasks_prompt(self, _design_result: Dict, output_dir: str) -> str:
         """작업 에이전트 프롬프트 - 파일 기반"""
+        requirements_file = str(Path(output_dir) / "requirements.md")
         design_file = str(Path(output_dir) / "design.md")
 
-        return f"""다음 설계 파일을 읽어서 상세한 tasks.md를 생성하세요:
+        return dedent(
+            f"""
+            프로젝트 컨텍스트:
+            - Requirements 문서 경로: {requirements_file}
+            - Design 문서 경로: {design_file}
 
-설계 파일을 확인하려면 read_spec_file("{design_file}")를 호출하세요.
-
-요구사항:
-1. Epic/Story/Task 계층 구조
-2. 각 작업에 대한 명확한 설명
-3. 예상 시간 및 우선순위
-4. DoD (Definition of Done) 체크리스트
-5. 의존성 표시
-6. 한국어로 작성
-
-지침: read_spec_file("{design_file}")로 불러온 내용을 바탕으로 작업 분해 문서를 작성하세요."""
+            read_spec_file("{requirements_file}")와 read_spec_file("{design_file}")를 사용해
+            최신 내용을 확인한 뒤 시스템 프롬프트 지침에 따라 tasks.md를 작성하세요.
+            """
+        ).strip()
 
     def _build_changes_prompt(self, service_type: str, output_dir: str) -> str:
         """변경사항 에이전트 프롬프트"""
@@ -517,69 +512,42 @@ FRS 내용:
         design_file = f"{output_dir}/design.md"
         tasks_file = f"{output_dir}/tasks.md"
 
+        return dedent(
+            f"""
+            프로젝트 컨텍스트:
+            - 서비스 유형: {service_type}
+            - Requirements 문서 경로: {requirements_file}
+            - Design 문서 경로: {design_file}
+            - Tasks 문서 경로: {tasks_file}
 
-        return f"""프로젝트 배포를 위한 상세한 changes.md를 생성하세요:
+            필요한 문서는 다음 호출로 확인하세요:
+            - read_spec_file("{requirements_file}")
+            - read_spec_file("{design_file}")
+            - read_spec_file("{tasks_file}")
 
-요구사항 파일 경로: {requirements_file}
-설계 파일 경로: {design_file}
+            시스템 프롬프트의 지침에 따라 changes.md를 작성하세요.
+            """
+        ).strip()
 
-서비스 유형: {service_type}
-
-참고 문서:
-- Requirements: read_spec_file("{requirements_file}")
-- Design: read_spec_file("{design_file}")
-- Tasks: read_spec_file("{tasks_file}")
-
-반드시 아래 5개의 섹션 헤더를 **동일한 텍스트**(슬래시(`/`)와 `&` 주변에 공백 없이)로 포함하세요. 영어 혹은 한글만 출력하면 검증에 실패합니다.
-- ## 버전 이력/Version History
-- ## 변경 요약/Change Summary
-- ## 영향/위험/Impact/Risk
-- ## 롤백 계획/Rollback Plan
-- ## 알려진 문제/Known Issues
-
-샘플 구조:
-```
-## 버전 이력/Version History
-| 버전/Version | 릴리스 날짜/Release Date | 변경 사항/Change Description |
-|--------------|--------------------------|------------------------------|
-
-## 변경 요약/Change Summary
-- 항목...
-
-## 영향/위험/Impact/Risk
-- 항목...
-
-## 롤백 계획/Rollback Plan
-- 항목...
-
-## 알려진 문제/Known Issues
-- 항목...
-```
-
-각 섹션에 구체적이고 실행 가능한 내용을 채우고, 문서 작성 후 apply_template("<your_content>", "changes")가 success=True를 반환하는지 반드시 확인하세요."""
-
-    def _build_openapi_prompt(self, requirements_result: Dict, design_result: Dict, output_dir: str) -> str:
+    def _build_openapi_prompt(self, _requirements_result: Dict, _design_result: Dict, output_dir: str) -> str:
         """OpenAPI 에이전트 프롬프트 - 파일 기반"""
         requirements_file = str(Path(output_dir) / "requirements.md")
         design_file = str(Path(output_dir) / "design.md")
 
-        return f"""Create a complete OpenAPI 3.1 specification in JSON format.
+        return dedent(
+            f"""
+            Project context:
+            - Requirements file: {requirements_file}
+            - Design file: {design_file}
 
-Use read_spec_file("{requirements_file}") and read_spec_file("{design_file}") to load the source material before writing the specification.
+            Load source material with:
+            - read_spec_file("{requirements_file}")
+            - read_spec_file("{design_file}")
 
-IMPORTANT:
-1. Read the contents of both files first
-2. Respond with only valid JSON. Start with {{ and end with }}
-3. Include:
-   - OpenAPI 3.1.0 specification
-   - Complete info section with title, version, description
-   - All authentication schemes (Bearer JWT)
-   - 5-10 core endpoints based on requirements
-   - Detailed request/response schemas
-   - Error responses (400, 401, 404, 500)
-   - Components section with reusable schemas
-
-Output pure JSON only - no text before or after."""
+            Follow the system prompt to produce the OpenAPI specification and
+            respond with the final JSON only.
+            """
+        ).strip()
 
 
     def _load_generated_documents(self, service_type: ServiceType) -> Dict[str, Dict[str, str]]:
@@ -1084,52 +1052,6 @@ Output pure JSON only - no text before or after."""
         return template_result
 
 
-    async def _save_agent_document(self, agent_name: str, content: str) -> Optional[Dict[str, Any]]:
-        """개별 에이전트 문서 즉시 저장 (비동기 버전)"""
-        agent_logger = self._get_agent_logger(agent_name)
-        try:
-            output_dir = self.context['project']['output_dir']
-
-            # 파일명 결정
-            if agent_name == 'openapi':
-                filename = 'openapi.json'
-            else:
-                filename = f'{agent_name}.md'
-            
-            # 파일 저장
-            result = await write_spec_file(
-                output_dir,
-                content,
-                filename,
-                **self._tool_kwargs(write_spec_file),
-            )
-
-            if result.get("success"):
-                file_info = {
-                    "filename": filename,
-                    "file_path": result.get("file_path"),
-                    "size": result.get("size", 0)
-                }
-                # 저장된 파일 목록에 추가
-                self.saved_files.append(result.get("file_path"))
-                agent_logger.info(
-                    "문서 저장 완료 | 파일: %s | 크기: %d bytes",
-                    file_info["file_path"],
-                    file_info["size"],
-                )
-                return file_info
-            else:
-                agent_logger.error(
-                    "문서 저장 실패 | 파일: %s | 이유: %s",
-                    filename,
-                    result.get('error'),
-                )
-                return None
-
-        except Exception:
-            agent_logger.exception("문서 저장 중 오류 발생")
-            return None
-    
     def _save_agent_document_sync(self, agent_name: str, content: str) -> Optional[Dict[str, Any]]:
         """개별 에이전트 문서 즉시 저장 (동기 버전)"""
         agent_logger = self._get_agent_logger(agent_name)
@@ -1182,216 +1104,6 @@ Output pure JSON only - no text before or after."""
     
     
     
-    
-    
-    async def _collect_and_save_node_results(self, graph, service_type: ServiceType) -> List[str]:
-        """Graph의 각 노드 결과를 수집하고 파일로 저장"""
-        saved_files = []
-
-        try:
-            self.logger.info("Graph 노드 결과 수집 시작")
-            # Graph 객체에서 노드별 결과 접근
-            nodes_to_save = ['requirements', 'design', 'tasks', 'changes']
-            if service_type == ServiceType.API:
-                nodes_to_save.append('openapi')
-
-            for node_name in nodes_to_save:
-                try:
-                    node_logger = self._get_agent_logger(node_name)
-                    # Graph의 노드에서 결과 가져오기
-                    node_result = self._get_node_result(graph, node_name)
-
-                    if node_result:
-                        # 결과 텍스트 처리
-                        processed_result = self._process_agent_result(node_name, node_result)
-
-                        self._validate_and_record_template(node_name, processed_result)
-
-                        # 파일 저장
-                        save_result = self._save_agent_document_sync(node_name, processed_result)
-                        if save_result:
-                            saved_files.append(save_result['file_path'])
-                            node_logger.info(
-                                "문서 저장 완료 | 파일: %s | 작업: %s",
-                                save_result['file_path'],
-                                save_result['action'],
-                            )
-                        else:
-                            node_logger.error("문서 저장 실패")
-                    else:
-                        node_logger.warning("노드 결과 없음")
-
-                except Exception:
-                    self._get_agent_logger(node_name).exception("노드 결과 처리 중 오류")
-
-            self.logger.info("Graph 노드 결과 수집 완료 | 저장 파일 %d개", len(saved_files))
-            return saved_files
-
-        except Exception:
-            self.logger.exception("노드 결과 수집 실패")
-            return saved_files
-    
-    def _get_node_result(self, graph, node_name: str):
-        """Graph에서 특정 노드의 결과 가져오기"""
-        try:
-            # Graph 객체의 내부 구조에서 노드 결과 접근
-            if hasattr(graph, 'nodes'):
-                for node in graph.nodes:
-                    if hasattr(node, 'node_id') and node.node_id == node_name:
-                        if hasattr(node, 'result'):
-                            return node.result
-            
-            # 다른 방식으로 접근 시도
-            if hasattr(graph, '_nodes'):
-                node = graph._nodes.get(node_name)
-                if node and hasattr(node, 'result'):
-                    return node.result
-            
-            # 마지막 실행 결과에서 찾기
-            if hasattr(graph, 'last_execution_result'):
-                return graph.last_execution_result
-                
-            return None
-            
-        except Exception:
-            self._get_agent_logger(node_name).exception("노드 결과 접근 실패")
-            return None
-    
-    async def _generate_remaining_documents(self, requirements_content: str, service_type: ServiceType) -> List[str]:
-        """requirements.md를 기반으로 나머지 문서들 생성"""
-        saved_files = []
-
-        try:
-            self.logger.info("나머지 문서 생성 시작")
-            # 나머지 생성할 문서들
-            remaining_agents = ['design', 'tasks', 'changes']
-            if service_type == ServiceType.API:
-                remaining_agents.append('openapi')
-
-            current_content = {'requirements': requirements_content}
-
-            for agent_name in remaining_agents:
-                try:
-                    agent_logger = self._get_agent_logger(agent_name)
-                    agent_logger.info("문서 생성 시작")
-
-                    # 에이전트별 프롬프트 생성
-                    prompt = self._build_agent_prompt_from_previous(agent_name, current_content, service_type.value)
-
-                    # 에이전트 실행
-                    agent = self.agents[agent_name]
-                    result = agent(prompt)
-
-                    # 결과 처리
-                    result_text = self._process_agent_result(agent_name, result)
-                    current_content[agent_name] = result_text
-
-                    self._validate_and_record_template(agent_name, result_text)
-
-                    # 파일 저장
-                    save_result = self._save_agent_document_sync(agent_name, result_text)
-                    if save_result:
-                        saved_files.append(save_result['file_path'])
-                        agent_logger.info(
-                            "문서 생성 완료 | 파일: %s | 작업: %s",
-                            save_result['file_path'],
-                            save_result['action'],
-                        )
-                    else:
-                        agent_logger.error("문서 저장 실패")
-
-                except Exception:
-                    self._get_agent_logger(agent_name).exception("문서 생성 중 오류")
-                    continue
-
-            self.logger.info("나머지 문서 생성 완료 | 저장 파일 %d개", len(saved_files))
-            return saved_files
-
-        except Exception:
-            self.logger.exception("나머지 문서 생성 실패")
-            return saved_files
-    
-    def _build_agent_prompt_from_previous(self, agent_name: str, previous_contents: Dict[str, str], service_type: str) -> str:
-        """이전 생성 결과를 기반으로 에이전트별 프롬프트 생성"""
-        
-        if agent_name == 'design':
-            requirements = previous_contents.get('requirements', '')[:3000]
-            return f"""다음 요구사항을 바탕으로 상세한 design.md를 생성하세요:
-
-요구사항:
-{requirements}
-
-서비스 유형: {service_type}
-
-요구사항:
-1. 시스템 아키텍처 설계
-2. Mermaid 시퀀스 다이어그램 포함 (```mermaid 블록)
-3. 데이터 모델 정의
-4. API 계약 설계
-5. 보안 및 성능 고려사항
-6. 한국어로 작성"""
-        
-        elif agent_name == 'tasks':
-            design = previous_contents.get('design', '')[:3000]
-            return f"""다음 설계를 바탕으로 상세한 tasks.md를 생성하세요:
-
-설계:
-{design}
-
-요구사항:
-1. Epic/Story/Task 계층 구조
-2. 각 작업에 대한 명확한 설명
-3. 예상 시간 및 우선순위
-4. DoD (Definition of Done) 체크리스트
-5. 의존성 표시
-6. 한국어로 작성"""
-        
-        elif agent_name == 'changes':
-            return f"""프로젝트 배포를 위한 상세한 changes.md를 생성하세요:
-
-서비스 유형: {service_type}
-
-요구사항:
-1. 버전 이력
-2. 변경 사항 요약
-3. 영향도 및 위험 분석
-4. 롤백 계획
-5. 알려진 이슈
-6. 한국어로 작성"""
-        
-        elif agent_name == 'openapi':
-            requirements = previous_contents.get('requirements', '')[:2000]
-            design = previous_contents.get('design', '')[:2000]
-            return f"""OpenAPI 3.1 명세를 JSON 형식으로 생성하세요:
-
-요구사항:
-{requirements}
-
-설계:
-{design}
-
-요구사항:
-1. 유효한 JSON 형식 (마크다운 블록 없이)
-2. OpenAPI 3.1 스펙 준수
-3. 5-10개의 핵심 엔드포인트
-4. 요청/응답 스키마 포함
-5. 인증 및 오류 처리
-6. JSON만 출력 (설명 없음)"""
-        
-        return "작업을 수행하세요."
-    
-    
-    
-    
-    
-    
-    
-    
-    def _extract_requirement_ids(self, content: str) -> List[str]:
-        """요구사항 ID 추출"""
-        import re
-        pattern = r'REQ-\d{3}'
-        return re.findall(pattern, content)
     
     
     async def _commit_changes(self, files_written: List[str]):
