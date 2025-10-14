@@ -6,17 +6,19 @@ import json
 import logging
 import re
 import unicodedata
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from strands import tool
 
-from ..logging_utils import get_session_logger
+from spec_agent.utils.logging import get_session_logger
 
 
 LOGGER = logging.getLogger("spec_agent.tools.template")
 
 
-def _get_logger(session_id: str | None = None) -> logging.LoggerAdapter | logging.Logger:
+def _get_logger(
+    session_id: str | None = None,
+) -> logging.LoggerAdapter | logging.Logger:
     if session_id:
         return get_session_logger("tools.template", session_id)
     return LOGGER
@@ -67,37 +69,58 @@ def apply_template(
         template_structures = {
             "requirements": [
                 # 한글/영어 모두 지원
-                "헤더/메타", "Header/Meta",
-                "범위", "Scope", 
-                "기능 요구사항", "Functional Requirements",
-                "오류 요구사항", "Error Requirements",
-                "보안 & 개인정보", "Security & Privacy",
-                "관측 가능성", "Observability",
-                "수용 기준", "Acceptance Criteria",
+                "헤더/메타",
+                "Header/Meta",
+                "범위",
+                "Scope",
+                "기능 요구사항",
+                "Functional Requirements",
+                "오류 요구사항",
+                "Error Requirements",
+                "보안 & 개인정보",
+                "Security & Privacy",
+                "관측 가능성",
+                "Observability",
+                "수용 기준",
+                "Acceptance Criteria",
             ],
             "design": [
                 # 한글/영어 모두 지원
-                "아키텍처", "Architecture",
-                "시퀀스 다이어그램", "Sequence Diagram",
-                "데이터 모델", "Data Model", 
-                "API 계약", "API Contract",
-                "보안 & 권한", "Security & Permissions",
-                "성능 목표", "Performance Goals",
+                "아키텍처",
+                "Architecture",
+                "시퀀스 다이어그램",
+                "Sequence Diagram",
+                "데이터 모델",
+                "Data Model",
+                "API 계약",
+                "API Contract",
+                "보안 & 권한",
+                "Security & Permissions",
+                "성능 목표",
+                "Performance Goals",
             ],
             "tasks": [
                 # 한글/영어 모두 지원
-                "에픽", "Epic", 
-                "스토리", "Story", 
-                "태스크", "Task", 
-                "DoD"  # DoD는 공통
+                "에픽",
+                "Epic",
+                "스토리",
+                "Story",
+                "태스크",
+                "Task",
+                "DoD",  # DoD는 공통
             ],
             "changes": [
                 # 한글/영어 모두 지원
-                "버전 이력", "Version History",
-                "변경 요약", "Change Summary", 
-                "영향/위험", "Impact/Risk",
-                "롤백 계획", "Rollback Plan",
-                "알려진 문제", "Known Issues",
+                "버전 이력",
+                "Version History",
+                "변경 요약",
+                "Change Summary",
+                "영향/위험",
+                "Impact/Risk",
+                "롤백 계획",
+                "Rollback Plan",
+                "알려진 문제",
+                "Known Issues",
             ],
         }
 
@@ -123,7 +146,11 @@ def apply_template(
             found_fields = list(parsed.keys())
 
             total_fields = len(required_fields)
-            compliance = (total_fields - len(missing_fields)) / total_fields if total_fields else 1.0
+            compliance = (
+                (total_fields - len(missing_fields)) / total_fields
+                if total_fields
+                else 1.0
+            )
 
             result = {
                 "success": len(missing_fields) == 0,
@@ -206,24 +233,20 @@ def apply_template(
             korean_present = any(
                 korean_norm == info["normalized"]
                 or korean_norm in info["normalized"]
-                or (
-                    korean_stripped
-                    and korean_stripped in info["stripped"]
-                )
+                or (korean_stripped and korean_stripped in info["stripped"])
                 for info in heading_infos
             )
             english_present = any(
                 english_norm == info["normalized"]
                 or english_norm in info["normalized"]
-                or (
-                    english_stripped
-                    and english_stripped in info["stripped"]
-                )
+                or (english_stripped and english_stripped in info["stripped"])
                 for info in heading_infos
             )
 
             if template_type == "changes":
-                requirement_met = bilingual_present or (korean_present and english_present)
+                requirement_met = bilingual_present or (
+                    korean_present and english_present
+                )
             else:
                 requirement_met = bilingual_present or korean_present or english_present
 

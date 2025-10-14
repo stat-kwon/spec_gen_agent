@@ -122,31 +122,34 @@ def generate(
             if result.get("quality_results"):
                 # Strands 워크플로우 메트릭
                 click.echo(f"\n📊 Strands Workflow Metrics:")
-                click.echo(f"  • Framework: {result.get('framework', 'Strands Agent SDK')}")
+                click.echo(
+                    f"  • Framework: {result.get('framework', 'Strands Agent SDK')}"
+                )
                 click.echo(f"  • Pattern: {result.get('pattern', 'Agent-to-Agent')}")
-                
-                if 'execution_time' in result:
+
+                if "execution_time" in result:
                     click.echo(f"  • Execution Time: {result['execution_time']:.1f}s")
-                
-                
+
                 # 품질 결과 표시
                 quality_results = result["quality_results"]
-                avg_quality = sum(r.get('overall', 0) for r in quality_results.values()) / len(quality_results)
+                avg_quality = sum(
+                    r.get("overall", 0) for r in quality_results.values()
+                ) / len(quality_results)
                 click.echo(f"  • Average Quality: {avg_quality:.1f}%")
-                
+
                 click.echo(f"\n📈 Document Quality Scores:")
                 for doc_type, scores in quality_results.items():
                     overall = scores.get("overall", 0)
                     status = "✅" if overall >= 70 else "⚠️" if overall >= 50 else "❌"
                     click.echo(f"  {status} {doc_type}: {overall:.1f}%")
-                    
+
                 # 일관성 결과 표시
                 if result.get("consistency_results"):
                     consistency = result["consistency_results"]
                     total_issues = sum(len(issues) for issues in consistency.values())
                     click.echo(f"\n🔍 Consistency Check:")
                     click.echo(f"  • Total Issues: {total_issues}")
-                    
+
             elif result.get("quality_report"):
                 # 레거시 메트릭 (하위 호환성)
                 report = result["quality_report"]
@@ -330,8 +333,6 @@ def agents(ctx):
     click.echo(f"   • Context passed between agents")
     click.echo(f"   • Automatic error handling and retries")
     click.echo(f"   • Quality validation at each step")
-
-
 
 
 if __name__ == "__main__":

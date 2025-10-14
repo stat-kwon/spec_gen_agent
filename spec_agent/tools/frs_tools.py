@@ -3,29 +3,22 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
-import importlib.util
-import sys
 from pathlib import Path
 from typing import Dict, Any
 
 from strands import tool
 
-from ..logging_utils import get_session_logger
-
-# models.py 직접 로드
-models_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models.py')
-spec = importlib.util.spec_from_file_location("models", models_path)
-models_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(models_module)
-FRSDocument = models_module.FRSDocument
+from spec_agent.utils.logging import get_session_logger
+from ..models import FRSDocument
 
 
 LOGGER = logging.getLogger("spec_agent.tools.frs")
 
 
-def _get_logger(session_id: str | None = None) -> logging.LoggerAdapter | logging.Logger:
+def _get_logger(
+    session_id: str | None = None,
+) -> logging.LoggerAdapter | logging.Logger:
     if session_id:
         return get_session_logger("tools.frs", session_id)
     return LOGGER
@@ -52,18 +45,18 @@ def load_frs_document(
     try:
         # 현재 작업 디렉토리를 기준으로 경로 해석
         path = Path(frs_path)
-        
+
         # 상대 경로인 경우 현재 작업 디렉토리 기준으로 절대 경로로 변환
         if not path.is_absolute():
             path = Path.cwd() / path
-        
+
         # 파일 존재 여부 확인 및 디버깅 정보 포함
         if not path.exists():
             # 대안 경로들 시도
             alternative_paths = [
                 Path.cwd() / "specs/FRS-1.md",
                 Path.cwd() / "spec_agent" / "specs/FRS-1.md",
-                Path(frs_path)
+                Path(frs_path),
             ]
 
             for alt_path in alternative_paths:
@@ -98,7 +91,7 @@ def load_frs_document(
             "frs": frs_doc.model_dump(),
             "content": content,
             "title": title,
-            "debug_info": f"Successfully loaded from: {path}"
+            "debug_info": f"Successfully loaded from: {path}",
         }
         logger.info("FRS 로드 성공 | 제목=%s", title)
         return result
@@ -108,7 +101,7 @@ def load_frs_document(
         return {
             "success": False,
             "error": f"Failed to load FRS document: {str(e)}",
-            "attempted_path": str(path) if 'path' in locals() else frs_path,
+            "attempted_path": str(path) if "path" in locals() else frs_path,
         }
 
 
