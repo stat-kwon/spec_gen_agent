@@ -12,7 +12,7 @@ from .validation_tools import (
     validate_openapi_spec,
     validate_markdown_content,
 )
-from .git_tools import create_git_branch, commit_changes, get_git_status
+from .git_tools import create_git_branch, commit_changes
 
 __all__ = [
     "load_frs_document",
@@ -27,5 +27,4 @@ __all__ = [
     "validate_markdown_content",
     "create_git_branch",
     "commit_changes",
-    "get_git_status",
 ]
