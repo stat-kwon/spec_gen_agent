@@ -7,7 +7,7 @@ agent interactions throughout the workflow.
 from __future__ import annotations
 
 import logging
-from typing import Union
+from typing import Optional, Union
 
 DEFAULT_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -70,8 +70,12 @@ def get_session_logger(component: str, session_id: str) -> SessionLoggerAdapter:
     return SessionLoggerAdapter(logger, {"session": session_id})
 
 
-def get_agent_logger(session_id: str, agent_name: str) -> AgentLoggerAdapter:
-    """Return a logger adapter that includes agent context."""
+def get_agent_logger(
+    session_id: Optional[str], agent_name: str
+) -> Union[AgentLoggerAdapter, logging.Logger]:
+    """Return a logger (adapter) that includes agent context when session is available."""
 
     logger = logging.getLogger(f"spec_agent.agents.{agent_name}")
-    return AgentLoggerAdapter(logger, {"session": session_id, "agent": agent_name})
+    if session_id:
+        return AgentLoggerAdapter(logger, {"session": session_id, "agent": agent_name})
+    return logger

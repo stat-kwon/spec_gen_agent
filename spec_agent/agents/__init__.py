@@ -1,5 +1,6 @@
-"""명세서 생성을 위한 Strands Agent SDK 기반 에이전트들."""
+"""Strands Agent SDK 기반 명세서 생성 에이전트."""
 
+from .factory import StrandsAgentFactory
 from .spec_agents import (
     create_requirements_agent,
     create_design_agent,
@@ -12,6 +13,7 @@ from .spec_agents import (
 )
 
 __all__ = [
+    "StrandsAgentFactory",
     "create_requirements_agent",
     "create_design_agent",
     "create_tasks_agent",
