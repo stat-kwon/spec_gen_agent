@@ -19,39 +19,47 @@ def test_apply_template_failure_prevents_save(tmp_path, monkeypatch):
     config = Config(openai_api_key="test-key")
     workflow = SpecificationWorkflow(config=config)
 
-    workflow.context['project'] = {
-        'frs_content': '샘플 FRS',
-        'output_dir': str(tmp_path),
-        'frs_id': 'FRS-TEST',
-        'service_type': ServiceType.API.value,
+    workflow.context["project"] = {
+        "frs_content": "샘플 FRS",
+        "output_dir": str(tmp_path),
+        "frs_id": "FRS-TEST",
+        "service_type": ServiceType.API.value,
     }
 
     workflow.agents = {
-        'requirements': lambda prompt: "# 잘못된 문서\n내용만 존재",
-        'design': lambda prompt: "",
-        'tasks': lambda prompt: "",
-        'changes': lambda prompt: "",
-        'openapi': lambda prompt: "{}",
+        "requirements": lambda prompt: "# 잘못된 문서\n내용만 존재",
+        "design": lambda prompt: "",
+        "tasks": lambda prompt: "",
+        "changes": lambda prompt: "",
+        "openapi": lambda prompt: "{}",
     }
 
     def failing_apply_template(content, template_type):
         return {
-            'success': False,
-            'content': content,
-            'template_type': template_type,
-            'missing_sections': ['Scope'],
-            'required_sections': ['Scope'],
+            "success": False,
+            "content": content,
+            "template_type": template_type,
+            "missing_sections": ["Scope"],
+            "required_sections": ["Scope"],
         }
 
-    monkeypatch.setattr('spec_agent.workflow.apply_template', failing_apply_template)
+    monkeypatch.setattr("spec_agent.workflow.apply_template", failing_apply_template)
 
     result = asyncio.run(workflow._execute_sequential_workflow(ServiceType.API))
 
-    assert result['success'] is False
+    assert result["success"] is False
     assert not any(tmp_path.iterdir())
     assert workflow.saved_files == []
-    assert workflow.context['documents']['template_results']['requirements']['success'] is False
-    assert 'Scope' in workflow.context['documents']['template_results']['requirements']['missing_sections']
+    assert (
+        workflow.context["documents"]["template_results"]["requirements"]["success"]
+        is False
+    )
+    assert (
+        "Scope"
+        in workflow.context["documents"]["template_results"]["requirements"][
+            "missing_sections"
+        ]
+    )
 
 
 def test_sequential_workflow_prompts_use_absolute_paths(tmp_path, monkeypatch):
@@ -59,11 +67,11 @@ def test_sequential_workflow_prompts_use_absolute_paths(tmp_path, monkeypatch):
     workflow = SpecificationWorkflow(config=config)
 
     project_output = tmp_path / "output"
-    workflow.context['project'] = {
-        'frs_content': '샘플 FRS',
-        'output_dir': str(project_output),
-        'frs_id': 'FRS-TEST',
-        'service_type': ServiceType.API.value,
+    workflow.context["project"] = {
+        "frs_content": "샘플 FRS",
+        "output_dir": str(project_output),
+        "frs_id": "FRS-TEST",
+        "service_type": ServiceType.API.value,
     }
 
     captured_prompts = {}
@@ -76,46 +84,48 @@ def test_sequential_workflow_prompts_use_absolute_paths(tmp_path, monkeypatch):
         return _inner
 
     workflow.agents = {
-        'requirements': record_prompt('requirements', "# Requirements\n- 내용"),
-        'design': record_prompt('design', "# Design\n- 내용"),
-        'tasks': record_prompt('tasks', "# Tasks\n- 내용"),
-        'changes': record_prompt('changes', "# Changes\n- 내용"),
-        'openapi': record_prompt('openapi', "{}"),
+        "requirements": record_prompt("requirements", "# Requirements\n- 내용"),
+        "design": record_prompt("design", "# Design\n- 내용"),
+        "tasks": record_prompt("tasks", "# Tasks\n- 내용"),
+        "changes": record_prompt("changes", "# Changes\n- 내용"),
+        "openapi": record_prompt("openapi", "{}"),
     }
 
     def successful_apply_template(content, template_type):
         return {
-            'success': True,
-            'content': content,
-            'template_type': template_type,
+            "success": True,
+            "content": content,
+            "template_type": template_type,
         }
 
     def successful_validate_openapi_spec(content):
         return {
-            'success': True,
-            'content': content,
+            "success": True,
+            "content": content,
         }
 
-    monkeypatch.setattr('spec_agent.workflow.apply_template', successful_apply_template)
-    monkeypatch.setattr('spec_agent.workflow.validate_openapi_spec', successful_validate_openapi_spec)
+    monkeypatch.setattr("spec_agent.workflow.apply_template", successful_apply_template)
+    monkeypatch.setattr(
+        "spec_agent.workflow.validate_openapi_spec", successful_validate_openapi_spec
+    )
 
     result = asyncio.run(workflow._execute_sequential_workflow(ServiceType.API))
 
-    assert result['success'] is True
+    assert result["success"] is True
 
     resolved_output = str(project_output.resolve())
     requirements_path = str(Path(resolved_output) / "requirements.md")
     design_path = str(Path(resolved_output) / "design.md")
     tasks_path = str(Path(resolved_output) / "tasks.md")
 
-    assert f'read_spec_file("{requirements_path}")' in captured_prompts['design']
-    assert f'read_spec_file("{design_path}")' in captured_prompts['tasks']
+    assert f'read_spec_file("{requirements_path}")' in captured_prompts["design"]
+    assert f'read_spec_file("{design_path}")' in captured_prompts["tasks"]
 
-    changes_prompt = captured_prompts['changes']
+    changes_prompt = captured_prompts["changes"]
     for path in (requirements_path, design_path, tasks_path):
         assert f'read_spec_file("{path}")' in changes_prompt
 
-    openapi_prompt = captured_prompts['openapi']
+    openapi_prompt = captured_prompts["openapi"]
     assert f'read_spec_file("{requirements_path}")' in openapi_prompt
     assert f'read_spec_file("{design_path}")' in openapi_prompt
 
@@ -229,60 +239,65 @@ def test_quality_cycle_applies_feedback_per_document(tmp_path, monkeypatch):
     workflow = SpecificationWorkflow(config=config)
 
     output_dir = tmp_path / "output"
-    workflow.context['project'] = {
-        'output_dir': str(output_dir),
-        'frs_id': 'FRS-TEST',
-        'service_type': ServiceType.API.value,
-        'frs_content': '샘플 FRS',
+    workflow.context["project"] = {
+        "output_dir": str(output_dir),
+        "frs_id": "FRS-TEST",
+        "service_type": ServiceType.API.value,
+        "frs_content": "샘플 FRS",
     }
 
     base_documents = {
-        'requirements': {'path': str(output_dir / 'requirements.md'), 'content': '# Requirements\n'},
-        'design': {'path': str(output_dir / 'design.md'), 'content': '# Design\n'},
-        'tasks': {'path': str(output_dir / 'tasks.md'), 'content': '# Tasks\n'},
+        "requirements": {
+            "path": str(output_dir / "requirements.md"),
+            "content": "# Requirements\n",
+        },
+        "design": {"path": str(output_dir / "design.md"), "content": "# Design\n"},
+        "tasks": {"path": str(output_dir / "tasks.md"), "content": "# Tasks\n"},
     }
 
     def fake_load_documents(service_type):
         return {name: doc.copy() for name, doc in base_documents.items()}
 
-    monkeypatch.setattr(workflow, '_load_generated_documents', fake_load_documents)
+    monkeypatch.setattr(workflow, "_load_generated_documents", fake_load_documents)
 
     quality_response = {
-        'completeness': 70,
-        'consistency': 65,
-        'clarity': 68,
-        'technical': 66,
-        'overall': 67,
-        'feedback': [
-            {"document": "design", "note": "설계 다이어그램을 보강하세요."}
-        ],
-        'needs_improvement': True,
+        "completeness": 70,
+        "consistency": 65,
+        "clarity": 68,
+        "technical": 66,
+        "overall": 67,
+        "feedback": [{"document": "design", "note": "설계 다이어그램을 보강하세요."}],
+        "needs_improvement": True,
     }
 
     consistency_response = {
-        'issues': [
-            {"document": "tasks", "note": "설계 변경 사항을 작업 목록에 반영"}
-        ],
-        'severity': 'medium',
-        'cross_references': 1,
-        'naming_conflicts': 0,
+        "issues": [{"document": "tasks", "note": "설계 변경 사항을 작업 목록에 반영"}],
+        "severity": "medium",
+        "cross_references": 1,
+        "naming_conflicts": 0,
     }
 
     coordinator_response = {
-        'approved': False,
-        'overall_quality': 68,
-        'decision': '개선필요',
-        'required_improvements': [
+        "approved": False,
+        "overall_quality": 68,
+        "decision": "개선필요",
+        "required_improvements": [
             {"document": "design", "note": "보안 섹션에 암호화 다이어그램 추가"},
             {"document": "tasks", "note": "보안 작업을 우선순위 높음으로 조정"},
         ],
-        'message': '설계와 작업의 일관성을 맞춰주세요.',
+        "message": "설계와 작업의 일관성을 맞춰주세요.",
     }
 
     workflow.agents = {
-        'quality_assessor': lambda prompt: json.dumps(quality_response, ensure_ascii=False),
-        'consistency_checker': lambda prompt: json.dumps(consistency_response, ensure_ascii=False),
-        'coordinator': lambda prompt: json.dumps(coordinator_response, ensure_ascii=False),
+        "quality_assessor": lambda prompt: json.dumps(
+            quality_response, ensure_ascii=False
+        ),
+        "consistency_checker": lambda prompt: json.dumps(
+            consistency_response, ensure_ascii=False
+        ),
+        "coordinator": lambda prompt: json.dumps(
+            coordinator_response, ensure_ascii=False
+        ),
     }
 
     requirements_calls = []
@@ -291,39 +306,45 @@ def test_quality_cycle_applies_feedback_per_document(tmp_path, monkeypatch):
 
     def requirements_agent(prompt):
         requirements_calls.append(prompt)
-        return '# Requirements\n'
+        return "# Requirements\n"
 
-    workflow.agents['requirements'] = requirements_agent
+    workflow.agents["requirements"] = requirements_agent
 
     def design_agent(prompt):
         design_calls.append(prompt)
-        return '# Updated Design\n'
+        return "# Updated Design\n"
 
     def tasks_agent(prompt):
         tasks_calls.append(prompt)
-        return '# Updated Tasks\n'
+        return "# Updated Tasks\n"
 
-    workflow.agents['design'] = design_agent
-    workflow.agents['tasks'] = tasks_agent
+    workflow.agents["design"] = design_agent
+    workflow.agents["tasks"] = tasks_agent
 
     def fake_validate(agent_name, content):
-        workflow.context['documents'].setdefault('previous_contents', {})[agent_name] = content
-        workflow.context['documents'].setdefault('template_results', {})[agent_name] = {'success': True}
-        return {'success': True}
+        workflow.context["documents"].setdefault("previous_contents", {})[
+            agent_name
+        ] = content
+        workflow.context["documents"].setdefault("template_results", {})[agent_name] = {
+            "success": True
+        }
+        return {"success": True}
 
     def fake_save(agent_name, content):
-        path = output_dir / ('openapi.json' if agent_name == 'openapi' else f'{agent_name}.md')
-        return {'file_path': str(path)}
+        path = output_dir / (
+            "openapi.json" if agent_name == "openapi" else f"{agent_name}.md"
+        )
+        return {"file_path": str(path)}
 
-    monkeypatch.setattr(workflow, '_validate_and_record_template', fake_validate)
-    monkeypatch.setattr(workflow, '_save_agent_document_sync', fake_save)
+    monkeypatch.setattr(workflow, "_validate_and_record_template", fake_validate)
+    monkeypatch.setattr(workflow, "_save_agent_document_sync", fake_save)
 
     result = asyncio.run(workflow._run_quality_improvement_cycle(ServiceType.API))
 
-    assert result['improvement_applied'] is True
-    assert any(path.endswith('design.md') for path in result['updated_files'])
-    assert any(path.endswith('tasks.md') for path in result['updated_files'])
-    assert not any('requirements.md' in path for path in result['updated_files'])
+    assert result["improvement_applied"] is True
+    assert any(path.endswith("design.md") for path in result["updated_files"])
+    assert any(path.endswith("tasks.md") for path in result["updated_files"])
+    assert not any("requirements.md" in path for path in result["updated_files"])
 
     assert len(design_calls) == 1
     assert len(tasks_calls) == 1

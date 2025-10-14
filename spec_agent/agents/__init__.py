@@ -6,8 +6,9 @@ from .spec_agents import (
     create_tasks_agent,
     create_changes_agent,
     create_openapi_agent,
-    create_markdown_to_json_agent,
-    create_validation_agent,
+    create_coordinator_agent,
+    create_quality_assessor_agent,
+    create_consistency_checker_agent,
 )
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "create_tasks_agent",
     "create_changes_agent",
     "create_openapi_agent",
-    "create_markdown_to_json_agent",
-    "create_validation_agent",
+    "create_coordinator_agent",
+    "create_quality_assessor_agent",
+    "create_consistency_checker_agent",
 ]

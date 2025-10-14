@@ -1,4 +1,4 @@
-"""spec_agent의 설정 관리."""   
+"""spec_agent의 설정 관리."""
 
 import os
 from typing import Optional
@@ -10,7 +10,7 @@ load_dotenv()
 
 
 class Config(BaseModel):
-    """spec_agent 시스템의 설정."""   
+    """spec_agent 시스템의 설정."""
 
     # OpenAI 설정
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
@@ -55,7 +55,7 @@ class Config(BaseModel):
     # 품질 및 반복 설정
     quality_threshold: float = float(os.getenv("QUALITY_THRESHOLD", "70.0"))
     consistency_threshold: float = float(os.getenv("CONSISTENCY_THRESHOLD", "75.0"))
-    max_iterations: int = int(os.getenv("MAX_ITERATIONS", "3"))
+    max_iterations: int = os.getenv("MAX_ITERATIONS", 3)
 
     @classmethod
     def from_env(cls) -> "Config":

@@ -10,13 +10,15 @@ from typing import Dict, Any
 
 from strands import tool
 
-from ..logging_utils import get_session_logger
+from spec_agent.utils.logging import get_session_logger
 
 
 LOGGER = logging.getLogger("spec_agent.tools.git")
 
 
-def _get_logger(session_id: str | None = None) -> logging.LoggerAdapter | logging.Logger:
+def _get_logger(
+    session_id: str | None = None,
+) -> logging.LoggerAdapter | logging.Logger:
     if session_id:
         return get_session_logger("tools.git", session_id)
     return LOGGER
