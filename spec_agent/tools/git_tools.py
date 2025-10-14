@@ -160,5 +160,3 @@ Generated specification documents:
     except Exception as e:
         logger.exception("Git 커밋 작업 실패")
         return {"success": False, "error": f"Commit operation failed: {str(e)}"}
-
-

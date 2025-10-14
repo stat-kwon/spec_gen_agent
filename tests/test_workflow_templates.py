@@ -11,15 +11,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from spec_agent.config import Config
 from spec_agent.models import ServiceType
-from spec_agent.workflow import SpecificationWorkflow
+from spec_agent.workflows import SequentialWorkflow
 from spec_agent.tools.template_tools import apply_template
 
 
 def test_apply_template_failure_prevents_save(tmp_path, monkeypatch):
     config = Config(openai_api_key="test-key")
-    workflow = SpecificationWorkflow(config=config)
+    workflow = SequentialWorkflow(config=config)
 
-    workflow.context["project"] = {
+    workflow.context.project = {
         "frs_content": "샘플 FRS",
         "output_dir": str(tmp_path),
         "frs_id": "FRS-TEST",
@@ -43,7 +43,9 @@ def test_apply_template_failure_prevents_save(tmp_path, monkeypatch):
             "required_sections": ["Scope"],
         }
 
-    monkeypatch.setattr("spec_agent.workflow.apply_template", failing_apply_template)
+    monkeypatch.setattr(
+        "spec_agent.workflows.sequential.apply_template", failing_apply_template
+    )
 
     result = asyncio.run(workflow._execute_sequential_workflow(ServiceType.API))
 
@@ -51,12 +53,11 @@ def test_apply_template_failure_prevents_save(tmp_path, monkeypatch):
     assert not any(tmp_path.iterdir())
     assert workflow.saved_files == []
     assert (
-        workflow.context["documents"]["template_results"]["requirements"]["success"]
-        is False
+        workflow.context.documents.template_results["requirements"]["success"] is False
     )
     assert (
         "Scope"
-        in workflow.context["documents"]["template_results"]["requirements"][
+        in workflow.context.documents.template_results["requirements"][
             "missing_sections"
         ]
     )
@@ -64,10 +65,10 @@ def test_apply_template_failure_prevents_save(tmp_path, monkeypatch):
 
 def test_sequential_workflow_prompts_use_absolute_paths(tmp_path, monkeypatch):
     config = Config(openai_api_key="test-key")
-    workflow = SpecificationWorkflow(config=config)
+    workflow = SequentialWorkflow(config=config)
 
     project_output = tmp_path / "output"
-    workflow.context["project"] = {
+    workflow.context.project = {
         "frs_content": "샘플 FRS",
         "output_dir": str(project_output),
         "frs_id": "FRS-TEST",
@@ -104,9 +105,12 @@ def test_sequential_workflow_prompts_use_absolute_paths(tmp_path, monkeypatch):
             "content": content,
         }
 
-    monkeypatch.setattr("spec_agent.workflow.apply_template", successful_apply_template)
     monkeypatch.setattr(
-        "spec_agent.workflow.validate_openapi_spec", successful_validate_openapi_spec
+        "spec_agent.workflows.sequential.apply_template", successful_apply_template
+    )
+    monkeypatch.setattr(
+        "spec_agent.workflows.sequential.validate_openapi_spec",
+        successful_validate_openapi_spec,
     )
 
     result = asyncio.run(workflow._execute_sequential_workflow(ServiceType.API))
@@ -192,7 +196,7 @@ def test_apply_template_changes_tolerates_spacing_variants():
 
 def test_parse_json_response_extracts_object_from_wrapped_text():
     config = Config(openai_api_key="test-key")
-    workflow = SpecificationWorkflow(config=config)
+    workflow = SequentialWorkflow(config=config)
 
     raw = (
         "아래는 개선된 결정입니다. 필요한 경우만 참고하세요. "
@@ -213,7 +217,7 @@ def test_parse_json_response_extracts_object_from_wrapped_text():
 
 def test_parse_json_response_handles_code_fences():
     config = Config(openai_api_key="test-key")
-    workflow = SpecificationWorkflow(config=config)
+    workflow = SequentialWorkflow(config=config)
 
     raw = """```json
 {
@@ -236,10 +240,10 @@ def test_parse_json_response_handles_code_fences():
 
 def test_quality_cycle_applies_feedback_per_document(tmp_path, monkeypatch):
     config = Config(openai_api_key="test-key", max_iterations=1)
-    workflow = SpecificationWorkflow(config=config)
+    workflow = SequentialWorkflow(config=config)
 
     output_dir = tmp_path / "output"
-    workflow.context["project"] = {
+    workflow.context.project = {
         "output_dir": str(output_dir),
         "frs_id": "FRS-TEST",
         "service_type": ServiceType.API.value,
@@ -257,8 +261,6 @@ def test_quality_cycle_applies_feedback_per_document(tmp_path, monkeypatch):
 
     def fake_load_documents(service_type):
         return {name: doc.copy() for name, doc in base_documents.items()}
-
-    monkeypatch.setattr(workflow, "_load_generated_documents", fake_load_documents)
 
     quality_response = {
         "completeness": 70,
@@ -320,14 +322,12 @@ def test_quality_cycle_applies_feedback_per_document(tmp_path, monkeypatch):
 
     workflow.agents["design"] = design_agent
     workflow.agents["tasks"] = tasks_agent
+    workflow.agents.setdefault("changes", lambda prompt: "# Changes\n")
+    workflow.agents.setdefault("openapi", lambda prompt: "{}")
 
     def fake_validate(agent_name, content):
-        workflow.context["documents"].setdefault("previous_contents", {})[
-            agent_name
-        ] = content
-        workflow.context["documents"].setdefault("template_results", {})[agent_name] = {
-            "success": True
-        }
+        workflow.context.documents.previous_contents[agent_name] = content
+        workflow.context.documents.template_results[agent_name] = {"success": True}
         return {"success": True}
 
     def fake_save(agent_name, content):
@@ -338,6 +338,11 @@ def test_quality_cycle_applies_feedback_per_document(tmp_path, monkeypatch):
 
     monkeypatch.setattr(workflow, "_validate_and_record_template", fake_validate)
     monkeypatch.setattr(workflow, "_save_agent_document_sync", fake_save)
+
+    workflow._ensure_components_ready()
+    monkeypatch.setattr(
+        workflow.quality_manager, "_load_generated_documents", fake_load_documents
+    )
 
     result = asyncio.run(workflow._run_quality_improvement_cycle(ServiceType.API))
 

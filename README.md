@@ -1,131 +1,96 @@
-# Optimized Agentic Loop Spec Generator
+# Spec Agent 워크플로우 안내
 
-Advanced AI-powered specification generator using iterative refinement for high-quality service documentation from FRS (Functional Requirements Specification) files. Features token optimization, incremental saving, and quality-driven document generation.
+Spec Agent는 FRS(Functional Requirements Specification) 문서를 입력으로 받아 요구사항부터 OpenAPI까지 일련의 산출물을 자동 생성하는 Agentic 워크플로우입니다. 순차 생성 파이프라인과 품질 보강 루프를 결합해 안정성과 자율성을 동시에 확보합니다.
 
-## Features
+## 주요 기능
 
-- Generates complete specification packages from FRS markdown files
-- Supports both API and Web service types
-- Creates standardized documentation:
-  - `requirements.md` - Requirements documentation
-  - `design.md` - Design documentation with architecture diagrams
-  - `tasks.md` - Work breakdown structure with Epic/Story/Task hierarchy
-  - `changes.md` - Change management documentation
-  - `openapi.json` - OpenAPI 3.1 specification (API services only)
-- Built-in validation and quality checks
-- Agent-based architecture for modular processing
+- `requirements.md`, `design.md`, `tasks.md`, `changes.md`, `openapi.json(API 한정)`을 순차적으로 생성
+- 템플릿 검증(`apply_template`, `validate_openapi_spec`)을 통한 형식 품질 보장
+- `QualityImprovementManager`가 품질·일관성 평가 결과에 따라 필요한 문서를 자동 재생성
+- Git 브랜치 생성 및 커밋 연계(옵션)
+- `flow.md`에 전체 흐름 다이어그램과 상세 설명 제공
 
-## Installation
+## 설치 및 설정
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd spec-agent
-
-# Install dependencies
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# Or install as package
 pip install -e .
 ```
 
-## Configuration
-
-Create a `.env` file based on `.env.example`:
+환경 변수 설정:
 
 ```bash
 cp .env.example .env
 ```
 
-Configure your OpenAI API credentials:
-```
-OPENAI_API_KEY=your-api-key-here
-```
+`.env`에 `OPENAI_API_KEY`를 포함해 주세요.
 
-## Usage
-
-### Generate Specifications
+## 사용 방법
 
 ```bash
-# Generate API service specifications
+# API 서비스 명세 생성
 spec-agent generate specs/FRS-1.md --service-type api
 
-# Generate Web service specifications  
-spec-agent generate specs/FRS-1.md --service-type web
+# Web 서비스 명세 생성
+spec-agent generate specs/FRS-2.md --service-type web
 
-# Specify custom output directory
+# 출력 경로 지정
 spec-agent generate specs/FRS-1.md --service-type api --output-dir ./output
 
-# Skip validation checks
-spec-agent generate specs/FRS-1.md --service-type api --no-validate
-```
+# Git 워크플로우 생략
+spec-agent generate specs/FRS-1.md --service-type api --no-git
 
-### Validate Existing Specifications
-
-```bash
-# Validate specification documents
+# 기존 산출물 검증
 spec-agent validate specs/FRS-1/api
 ```
 
-### Show Version
+CLI는 내부적으로 `spec_agent.workflows.get_workflow()`를 통해 `SequentialWorkflow`를 불러와 실행합니다.
+
+## 워크플로우 개요
+
+- **Sequential Pipeline**: `SequentialDocumentGenerator`가 FRS 로드 → 에이전트 초기화 → 문서 생성 → 템플릿 검증 → 파일 저장을 고정 순서로 수행합니다.
+- **Adaptive Quality Loop**: `QualityImprovementManager`가 품질·일관성 에이전트 평가를 통합해 승인 여부를 판단하고, 필요한 문서만 재생성하도록 지시합니다.
+- 전체 흐름은 `flow.md`의 Mermaid 다이어그램을 참고하세요.
+
+## 디렉터리 구조
+
+```
+spec_agent/
+├── agents/            # 문서별 에이전트 팩토리
+├── workflows/         # SequentialWorkflow 및 품질/생성 헬퍼
+│   ├── context.py     # WorkflowContext 데이터 구조
+│   ├── generation.py  # SequentialDocumentGenerator
+│   ├── quality.py     # QualityImprovementManager
+│   ├── git_ops.py     # Git 연동 헬퍼
+│   └── prompts.py     # 프롬프트 빌더
+├── tools/             # 템플릿, 검증, Git 등 도구 함수
+├── utils/             # 로깅 등 공통 유틸
+├── config.py          # 환경 설정 로더
+├── workflow.py        # 기존 경로 호환용 래퍼
+└── cli.py             # CLI 엔트리포인트
+```
+
+생성된 문서는 기본적으로 `specs/<FRS-ID>/<service-type>/` 경로에 저장됩니다.
+
+## 개발 및 테스트
 
 ```bash
-spec-agent version
+# 포맷/테스트 전 의존성 설치
+pip install -r requirements.txt
+
+# 전체 테스트 실행
+pytest
+
+# 특정 테스트만 실행
+pytest tests/test_workflow_templates.py -k quality
 ```
 
-## Project Structure
+- 테스트는 `tests/` 하위에 Pytest 스타일로 배치되어 있으며, 에이전트 프롬프트와 검증 로직을 집중적으로 다룹니다.
+- 새 에이전트나 템플릿을 추가할 때에는 동일한 스타일의 테스트 시나리오를 추가해 회귀 안전망을 구축해 주세요.
 
-```
-spec-agent/
-├── spec_agent/
-│   ├── agents/          # Agent implementations
-│   │   ├── base.py      # Base agent class
-│   │   ├── frs_loader.py
-│   │   ├── reqs_agent.py
-│   │   ├── design_agent.py
-│   │   ├── tasks_agent.py
-│   │   ├── changes_agent.py
-│   │   ├── openapi_agent.py
-│   │   ├── qc_inspector.py
-│   │   └── repo_writer.py
-│   ├── models.py        # Data models
-│   ├── orchestrator.py  # Main orchestration logic
-│   └── cli.py          # CLI interface
-├── specs/              # FRS files and generated specs
-├── tests/              # Test files
-└── requirements.txt    # Dependencies
-```
+## 참고 자료
 
-## Output Structure
-
-Generated specifications are organized as follows:
-
-```
-specs/
-└── FRS-1/
-    ├── api/
-    │   ├── requirements.md
-    │   ├── design.md
-    │   ├── tasks.md
-    │   ├── changes.md
-    │   └── openapi.json
-    └── web/
-        ├── requirements.md
-        ├── design.md
-        ├── tasks.md
-        └── changes.md
-```
-
-## Development
-
-```bash
-# Run in development mode
-python -m spec_agent generate specs/FRS-1.md --service-type api
-
-# Run tests
-pytest tests/
-```
-
-## License
-
-MIT
+- `flow.md`: 전체 워크플로우 다이어그램 및 컨텍스트 설명
+- `specs/`: 샘플 FRS 입력과 생성 결과
+- `AGENTS.md`, `CLAUDE.md`: 프롬프트 설계 및 Agentic 패턴 참고 문서

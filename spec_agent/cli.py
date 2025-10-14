@@ -9,7 +9,7 @@ from typing import Optional
 import click
 from .config import Config
 from .models import ServiceType
-from .workflow import SpecificationWorkflow
+from .workflows import get_workflow
 
 
 @click.group()
@@ -85,7 +85,7 @@ def generate(
 
     # Strands Agent SDK 워크플로우 사용
     click.echo(f"🌟 Using Strands Agent SDK native workflow patterns")
-    workflow = SpecificationWorkflow(config)
+    workflow = get_workflow(config=config)
 
     # Run generation
     click.echo(f"🚀 Starting specification generation...")
@@ -224,7 +224,7 @@ def validate(ctx, spec_dir: Path):
         sys.exit(1)
 
     # Initialize Strands workflow
-    workflow = SpecificationWorkflow(config)
+    workflow = get_workflow(config=config)
 
     click.echo(f"🔍 Validating specifications in: {spec_dir}")
 
@@ -235,16 +235,17 @@ def validate(ctx, spec_dir: Path):
         if result["success"]:
             click.echo(f"\n✅ Validation completed!")
 
-            if result.get("validation_results"):
-                click.echo(f"📋 Validation summary:")
-                for validation in result["validation_results"]:
-                    status = (
-                        "✅"
-                        if "success" in validation.get("result", "").lower()
-                        else "❌"
+            validation_entries = result.get("validation_results") or []
+            if validation_entries:
+                click.echo("📋 Validation summary:")
+                for entry in validation_entries:
+                    file_label = (
+                        entry.get("file") or entry.get("file_path") or "unknown"
                     )
-                    file_name = Path(validation["file_path"]).name
-                    click.echo(f"  {status} {file_name}")
+                    status = "✅" if entry.get("valid") else "❌"
+                    click.echo(f"  {status} {file_label}")
+                    if entry.get("error") and not entry.get("valid"):
+                        click.echo(f"     ↪ {entry['error']}")
 
             # Show overall report if available
             if result.get("report"):
