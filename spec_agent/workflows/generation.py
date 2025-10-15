@@ -51,12 +51,13 @@ class SequentialDocumentGenerator:
             output_dir = str(Path(self.context.project.get("output_dir", "")).resolve())
 
             frs_content = self.context.project.get("frs_content", "No FRS Contents")
+            previous_results = self.context.quality.get("previous_results")
             requirements_logger = self.agent_logger_factory("requirements")
             requirements_logger.info("문서 생성 시작")
             req_prompt = build_requirements_prompt(
                 frs_content,
                 self.context.project.get("service_type", service_type.value),
-                previous_results=self.context.quality.get("previous_results"),
+                previous_results=previous_results,
                 metadata=self.context.metrics,
             )
             req_result = self.agents["requirements"](req_prompt)
@@ -74,7 +75,11 @@ class SequentialDocumentGenerator:
 
             design_logger = self.agent_logger_factory("design")
             design_logger.info("문서 생성 시작")
-            design_prompt = build_design_prompt(output_dir, service_type.value)
+            design_prompt = build_design_prompt(
+                output_dir,
+                service_type.value,
+                previous_results=previous_results,
+            )
             design_result = self.agents["design"](design_prompt)
             design_content = self.process_agent_result("design", design_result)
             self.validate_and_record("design", design_content)
@@ -90,7 +95,10 @@ class SequentialDocumentGenerator:
 
             tasks_logger = self.agent_logger_factory("tasks")
             tasks_logger.info("문서 생성 시작")
-            tasks_prompt = build_tasks_prompt(output_dir)
+            tasks_prompt = build_tasks_prompt(
+                output_dir,
+                previous_results=previous_results,
+            )
             tasks_result = self.agents["tasks"](tasks_prompt)
             tasks_content = self.process_agent_result("tasks", tasks_result)
             self.validate_and_record("tasks", tasks_content)
@@ -104,7 +112,11 @@ class SequentialDocumentGenerator:
 
             changes_logger = self.agent_logger_factory("changes")
             changes_logger.info("문서 생성 시작")
-            changes_prompt = build_changes_prompt(output_dir, service_type.value)
+            changes_prompt = build_changes_prompt(
+                output_dir,
+                service_type.value,
+                previous_results=previous_results,
+            )
             changes_result = self.agents["changes"](changes_prompt)
             changes_content = self.process_agent_result("changes", changes_result)
             self.validate_and_record("changes", changes_content)
@@ -121,7 +133,10 @@ class SequentialDocumentGenerator:
             if service_type == ServiceType.API:
                 openapi_logger = self.agent_logger_factory("openapi")
                 openapi_logger.info("문서 생성 시작")
-                openapi_prompt = build_openapi_prompt(output_dir)
+                openapi_prompt = build_openapi_prompt(
+                    output_dir,
+                    previous_results=previous_results,
+                )
                 openapi_result = self.agents["openapi"](openapi_prompt)
                 openapi_content = self.process_agent_result("openapi", openapi_result)
                 self.validate_and_record("openapi", openapi_content)

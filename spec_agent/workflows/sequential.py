@@ -330,11 +330,11 @@ class SequentialWorkflow:
     def _process_agent_result(self, agent_name: str, result: Any) -> str:
         """에이전트 결과를 문자열로 정규화합니다."""
 
-        if agent_name == "openapi" and isinstance(result, dict):
-            return json.dumps(result, ensure_ascii=False, indent=2)
-
         result_str = str(result)
         if agent_name == "openapi":
+            if isinstance(result, dict):
+                return json.dumps(result, ensure_ascii=False, indent=2)
+
             if result_str.startswith("```json"):
                 result_str = result_str[7:]
             if result_str.startswith("```"):
@@ -343,17 +343,87 @@ class SequentialWorkflow:
                 result_str = result_str[:-3]
             result_str = result_str.strip()
 
-            try:
-                parsed = json.loads(result_str)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    "OpenAPI 결과를 JSON으로 파싱하는 데 실패했습니다: "
-                    f"{exc.msg} (line {exc.lineno}, column {exc.colno})"
-                ) from exc
-
+            parsed = self._parse_json_with_repair(result_str)
             return json.dumps(parsed, ensure_ascii=False, indent=2)
 
         return result_str
+
+    def _parse_json_with_repair(self, content: str) -> Any:
+        """OpenAPI 에이전트 결과가 JSON 형식에서 조금 벗어난 경우 보정해 파싱합니다."""
+
+        candidate = self._extract_json_candidate(content)
+
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+        repaired = candidate.replace("\r", "")
+        replacements = {
+            "True": "true",
+            "False": "false",
+            "None": "null",
+        }
+        for src, dest in replacements.items():
+            repaired = re.sub(rf"\b{src}\b", dest, repaired)
+        repaired = repaired.replace("'", '"')
+
+        key_pattern = re.compile(r'(?<=\{|,)\s*(?!")([A-Za-z0-9_\-\$]+)\s*:')
+        repaired = key_pattern.sub(lambda m: f'"{m.group(1)}":', repaired)
+
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "OpenAPI 결과를 JSON으로 파싱하는 데 실패했습니다: "
+                f"{exc.msg} (line {exc.lineno}, column {exc.colno})"
+            ) from exc
+
+    def _extract_json_candidate(self, text: str) -> str:
+        """여분의 프롤로그/에필로그가 포함된 문자열에서 첫 JSON 객체/배열을 추출합니다."""
+
+        start_index: Optional[int] = None
+        end_index: Optional[int] = None
+        stack: List[str] = []
+        in_string = False
+        escape = False
+
+        for idx, ch in enumerate(text):
+            if start_index is None:
+                if ch in "{[":
+                    start_index = idx
+                    stack.append("}" if ch == "{" else "]")
+                continue
+
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+
+            if ch == '"':
+                in_string = True
+                continue
+
+            if ch in "{[":
+                stack.append("}" if ch == "{" else "]")
+                continue
+
+            if ch in "}]" and stack:
+                expected = stack.pop()
+                if ch != expected:
+                    # 불일치 시 추출 실패, 원문 반환
+                    return text.strip()
+                if not stack:
+                    end_index = idx + 1
+                    break
+
+        if start_index is not None and end_index is not None:
+            return text[start_index:end_index]
+        return text.strip()
 
     def _validate_and_record_template(
         self,

@@ -59,6 +59,9 @@ class QualityImprovementManager:
         improvement_applied = False
         cumulative_updated_files: List[str] = []
 
+        # 이전 평가 결과 초기화
+        self.context.quality.pop("previous_results", None)
+
         for iteration in range(1, self.max_iterations + 1):
             documents = self._load_generated_documents(service_type)
             if not documents:
@@ -100,6 +103,15 @@ class QualityImprovementManager:
             }
             cycle_results.append(iteration_result)
 
+            iteration_snapshot = {
+                "iteration": iteration,
+                "quality": quality_result,
+                "consistency": consistency_result,
+                "coordinator": coordinator_result,
+                "feedback_by_doc": {},
+            }
+            self.context.quality["previous_results"] = iteration_snapshot
+
             if not self._should_continue_quality_loop(
                 quality_result, coordinator_result
             ):
@@ -109,6 +121,8 @@ class QualityImprovementManager:
             feedback_by_doc = self._aggregate_feedback(
                 quality_result, consistency_result, coordinator_result
             )
+            iteration_snapshot["feedback_by_doc"] = feedback_by_doc
+
             if not any(feedback_by_doc.values()):
                 self.logger.info("품질 개선 사이클 종료 - 피드백이 없습니다")
                 break

@@ -33,6 +33,7 @@ def _normalize_heading_text(text: str) -> str:
     """
 
     normalized = unicodedata.normalize("NFKC", text)
+    normalized = normalized.lstrip("# ").strip()
     normalized = re.sub(r"\s*/\s*", "/", normalized)
     normalized = re.sub(r"\s*&\s*", "&", normalized)
     normalized = re.sub(r"\s+", " ", normalized)
