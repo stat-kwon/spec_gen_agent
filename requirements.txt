@@ -7,3 +7,4 @@ click
 python-dotenv
 jsonschema
 aiofiles
+pyyaml

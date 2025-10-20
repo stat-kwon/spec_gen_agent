@@ -87,6 +87,16 @@ def generate(
     click.echo(f"🌟 Using Strands Agent SDK native workflow patterns")
     workflow = get_workflow(config=config)
 
+    if no_validate:
+        click.echo("⚠️ Validation disabled via --no-validate (use only for debugging)")
+
+        def _noop_validate(agent_name: str, content: str):
+            workflow.context.documents.previous_contents[agent_name] = content
+            workflow.context.documents.template_results[agent_name] = {"success": True}
+            return {"success": True}
+
+        workflow._validate_and_record_template = _noop_validate  # type: ignore[attr-defined]
+
     # Run generation
     click.echo(f"🚀 Starting specification generation...")
     click.echo(f"📖 FRS: {frs_path}")
@@ -100,7 +110,7 @@ def generate(
         try:
             # Strands 네이티브 워크플로우 실행
             result = loop.run_until_complete(
-                workflow.execute_workflow(
+                workflow.run(
                     frs_path=str(frs_path),
                     service_type=service_enum,
                     output_dir=str(output_dir) if output_dir else None,
@@ -118,79 +128,27 @@ def generate(
             for file_path in result["files_written"]:
                 click.echo(f"  ✅ {Path(file_path).name}")
 
-            # Show execution metrics
-            if result.get("quality_results"):
-                # Strands 워크플로우 메트릭
-                click.echo(f"\n📊 Strands Workflow Metrics:")
+            click.echo(f"\n📊 Pipeline Metrics:")
+            click.echo(
+                f"  • Framework: {result.get('framework', 'SpecificationPipeline')}"
+            )
+            if "execution_time" in result:
+                click.echo(f"  • Execution Time: {result['execution_time']:.1f}s")
+
+            generation = result.get("generation", {})
+            quality = result.get("quality", {})
+
+            if generation:
                 click.echo(
-                    f"  • Framework: {result.get('framework', 'Strands Agent SDK')}"
+                    f"  • Documents Generated: {len(generation.get('saved_files', []))}"
                 )
-                click.echo(f"  • Pattern: {result.get('pattern', 'Agent-to-Agent')}")
-
-                if "execution_time" in result:
-                    click.echo(f"  • Execution Time: {result['execution_time']:.1f}s")
-
-                # 품질 결과 표시
-                quality_results = result["quality_results"]
-                avg_quality = sum(
-                    r.get("overall", 0) for r in quality_results.values()
-                ) / len(quality_results)
-                click.echo(f"  • Average Quality: {avg_quality:.1f}%")
-
-                click.echo(f"\n📈 Document Quality Scores:")
-                for doc_type, scores in quality_results.items():
-                    overall = scores.get("overall", 0)
-                    status = "✅" if overall >= 70 else "⚠️" if overall >= 50 else "❌"
-                    click.echo(f"  {status} {doc_type}: {overall:.1f}%")
-
-                # 일관성 결과 표시
-                if result.get("consistency_results"):
-                    consistency = result["consistency_results"]
-                    total_issues = sum(len(issues) for issues in consistency.values())
-                    click.echo(f"\n🔍 Consistency Check:")
-                    click.echo(f"  • Total Issues: {total_issues}")
-
-            elif result.get("quality_report"):
-                # 레거시 메트릭 (하위 호환성)
-                report = result["quality_report"]
-                click.echo(f"\n📊 Performance Metrics:")
+            if quality:
                 click.echo(
-                    f"  • Average Quality: {report.get('average_quality', 0):.1f}%"
+                    f"  • Quality Improvements Applied: {'Yes' if quality.get('improvement_applied') else 'No'}"
                 )
-                click.echo(f"  • Iterations Used: {result.get('iterations', 0)}")
-                click.echo(
-                    f"  • Converged: {'Yes' if result.get('converged') else 'No'}"
-                )
-
-                if report.get("quality_breakdown"):
-                    click.echo(f"\n📈 Document Quality Scores:")
-                    for doc_type, scores in report["quality_breakdown"].items():
-                        overall = scores.get("overall", 0)
-                        status = (
-                            "✅" if overall >= 70 else "⚠️" if overall >= 50 else "❌"
-                        )
-                        click.echo(f"  {status} {doc_type}: {overall:.1f}%")
-
-                # Show time efficiency if available
-                if "total_time" in result:
-                    click.echo(f"\n⏱️ Time Efficiency:")
-                    click.echo(f"  • Total Time: {result['total_time']:.1f}s")
-                    click.echo(
-                        f"  • Time per Document: {result['total_time']/len(result['files_written']):.1f}s"
-                    )
-                    if result.get("incremental_saves"):
-                        click.echo(
-                            f"  • Incremental Saves: {len(result['incremental_saves'])} saves"
-                        )
-            elif result.get("validation_results"):
-                click.echo(f"\n🔍 Validation summary:")
-                for validation in result["validation_results"]:
-                    status = (
-                        "✅"
-                        if "success" in validation.get("result", "").lower()
-                        else "⚠️"
-                    )
-                    click.echo(f"  {status} {validation['document']}")
+                iterations = quality.get("iterations", [])
+                if iterations:
+                    click.echo(f"  • Quality Iterations: {len(iterations)}")
         else:
             click.echo(
                 f"❌ Generation failed: {result.get('error', 'Unknown error')}",
@@ -223,44 +181,8 @@ def validate(ctx, spec_dir: Path):
         click.echo(f"❌ Not a directory: {spec_dir}", err=True)
         sys.exit(1)
 
-    # Initialize Strands workflow
-    workflow = get_workflow(config=config)
-
-    click.echo(f"🔍 Validating specifications in: {spec_dir}")
-
-    try:
-        # Run validation using Strands workflow
-        result = workflow.validate_existing_specs(str(spec_dir))
-
-        if result["success"]:
-            click.echo(f"\n✅ Validation completed!")
-
-            validation_entries = result.get("validation_results") or []
-            if validation_entries:
-                click.echo("📋 Validation summary:")
-                for entry in validation_entries:
-                    file_label = (
-                        entry.get("file") or entry.get("file_path") or "unknown"
-                    )
-                    status = "✅" if entry.get("valid") else "❌"
-                    click.echo(f"  {status} {file_label}")
-                    if entry.get("error") and not entry.get("valid"):
-                        click.echo(f"     ↪ {entry['error']}")
-
-            # Show overall report if available
-            if result.get("report"):
-                click.echo(f"\n📊 Overall Report:")
-                click.echo(f"  {result['report']}")
-        else:
-            click.echo(
-                f"❌ Validation failed: {result.get('error', 'Unknown error')}",
-                err=True,
-            )
-            sys.exit(1)
-
-    except Exception as e:
-        click.echo(f"❌ Validation error: {str(e)}", err=True)
-        sys.exit(1)
+    click.echo(f"🔍 Validation is not yet implemented in the new pipeline. Coming soon!")
+    sys.exit(1)
 
 
 @cli.command()

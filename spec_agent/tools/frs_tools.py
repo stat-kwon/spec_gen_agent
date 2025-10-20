@@ -124,51 +124,132 @@ def extract_frs_metadata(
     logger.info("FRS 메타데이터 추출 시작")
 
     try:
-        metadata = {}
+        metadata: Dict[str, Any] = {}
 
-        # Extract sections
+        def _extract_section_block(title: str) -> str:
+            pattern = rf"^##\s+{re.escape(title)}\s*\n(.*?)(?=^##\s+|\Z)"
+            match = re.search(pattern, frs_content, re.MULTILINE | re.DOTALL)
+            return match.group(1).strip() if match else ""
+
+        def _extract_subsection_block(section_text: str, subheading: str) -> str:
+            pattern = rf"^###\s+{re.escape(subheading)}\s*\n(.*?)(?=^###\s+|\Z)"
+            match = re.search(pattern, section_text, re.MULTILINE | re.DOTALL)
+            return match.group(1).strip() if match else ""
+
+        def _extract_bullets(text: str) -> list[str]:
+            return [re.sub(r"^[-*]\s*", "", line.strip()) for line in text.splitlines() if line.strip().startswith(("-", "*"))]
+
+        # Title
+        title_match = re.search(r"^#\s+(.+)$", frs_content, re.MULTILINE)
+        metadata["title"] = title_match.group(1).strip() if title_match else ""
+
+        # Meta fields from header
+        branch_match = re.search(r"\*\*Feature Branch\*\*:\s*`([^`]+)`", frs_content)
+        created_match = re.search(r"\*\*Created\*\*:\s*([^\n]+)", frs_content)
+        status_match = re.search(r"\*\*Status\*\*:\s*([^\n]+)", frs_content)
+        input_match = re.search(r"\*\*Input\*\*:\s*([^\n]+)", frs_content)
+
+        metadata["feature_branch"] = branch_match.group(1).strip() if branch_match else None
+        metadata["created"] = created_match.group(1).strip() if created_match else None
+        metadata["status"] = status_match.group(1).strip() if status_match else None
+        metadata["input_summary"] = input_match.group(1).strip() if input_match else None
+
+        # Sections list
         sections = re.findall(r"^##\s+(.+)$", frs_content, re.MULTILINE)
         metadata["sections"] = sections
 
-        # Extract requirements count
-        requirements_match = re.findall(r"REQ-\d+", frs_content)
-        metadata["requirements_count"] = len(requirements_match)
+        # Vision
+        metadata["vision"] = _extract_section_block("Vision & Problem Statement")
 
-        # Extract service mentions
-        service_indicators = []
-        if re.search(r"\bAPI\b|\bREST\b|\bendpoint\b", frs_content, re.IGNORECASE):
-            service_indicators.append("api")
-        if re.search(
-            r"\bweb\b|\bUI\b|\bfrontend\b|\bpage\b", frs_content, re.IGNORECASE
-        ):
-            service_indicators.append("web")
+        # Personas
+        personas_section = _extract_section_block("Personas")
+        personas = []
+        for entry in _extract_bullets(personas_section):
+            match = re.match(r"\*\*(.+?)\*\*:\s*(.+)", entry)
+            if match:
+                personas.append({"name": match.group(1).strip(), "description": match.group(2).strip()})
+            elif entry:
+                personas.append({"name": None, "description": entry})
+        metadata["personas"] = personas
 
-        metadata["suggested_service_types"] = service_indicators
+        # Scope
+        scope_section = _extract_section_block("Scope")
+        in_scope = _extract_bullets(_extract_subsection_block(scope_section, "In Scope")) if scope_section else []
+        out_scope = _extract_bullets(_extract_subsection_block(scope_section, "Out of Scope")) if scope_section else []
+        metadata["scope_in"] = in_scope
+        metadata["scope_out"] = out_scope
 
-        # Extract complexity indicators
-        complexity_score = 0
-        complexity_score += len(
-            re.findall(r"\bintegration\b|\bexternal\b", frs_content, re.IGNORECASE)
+        # Assumptions & Open Questions
+        assumption_section = _extract_section_block("Assumptions & Open Questions")
+        assumptions = _extract_bullets(_extract_subsection_block(assumption_section, "Assumptions")) if assumption_section else []
+        open_questions = _extract_bullets(_extract_subsection_block(assumption_section, "Open Questions")) if assumption_section else []
+        metadata["assumptions"] = assumptions
+        metadata["open_questions"] = open_questions
+
+        # User scenarios (summary)
+        scenario_pattern = re.compile(
+            r"^###\s+(?:Scenario|User Story)\s+\d+\s*-\s*(.*?)\s*\(Priority:\s*(.*?)\)\n(.*?)(?=^###\s+(?:Scenario|User Story)|^##|\Z)",
+            re.MULTILINE | re.DOTALL,
         )
-        complexity_score += len(
-            re.findall(
-                r"\bauthentication\b|\bauthorization\b", frs_content, re.IGNORECASE
+        scenarios = []
+        for match in scenario_pattern.finditer(frs_content):
+            title = match.group(1).strip()
+            priority = match.group(2).strip()
+            block = match.group(3).strip()
+            lines = [line.strip() for line in block.splitlines() if line.strip()]
+            summary = next((line for line in lines if not line.startswith("-") and not line.startswith("**")), "")
+            bullet_items = [re.sub(r"^[-*]\s*", "", line) for line in lines if line.startswith("-")]
+            scenarios.append(
+                {
+                    "title": title,
+                    "priority": priority,
+                    "summary": summary,
+                    "highlights": bullet_items,
+                }
             )
-        )
-        complexity_score += len(
-            re.findall(r"\bdatabase\b|\bstorage\b", frs_content, re.IGNORECASE)
-        )
+        metadata["user_scenarios"] = scenarios
+        metadata["user_scenario_count"] = len(scenarios)
 
+        # Edge cases
+        edge_block = re.search(r"###\s+Edge Cases\n(.+?)(?=^##|\Z)", frs_content, re.DOTALL | re.MULTILINE)
+        edge_cases = _extract_bullets(edge_block.group(1)) if edge_block else []
+        metadata["edge_cases"] = edge_cases
+
+        # Functional overview
+        functional_reqs = re.findall(r"\*\*FR-(\d+)\*\*:\s*(.+)", frs_content)
+        metadata["functional_requirements"] = [f"FR-{idx}: {desc.strip()}" for idx, desc in functional_reqs]
+        metadata["requirements_count"] = len(functional_reqs)
+
+        # Success criteria summary
+        success_criteria = re.findall(r"\*\*SC-(\d+)\*\*:\s*(.+)", frs_content)
+        metadata["success_criteria"] = [f"SC-{idx}: {desc.strip()}" for idx, desc in success_criteria]
+
+        # Suggested service types (heuristic)
+        lower_content = frs_content.lower()
+        service_indicators = []
+        if "api" in lower_content or "endpoint" in lower_content or "rest" in lower_content:
+            service_indicators.append("api")
+        if "mobile" in lower_content or "ios" in lower_content or "android" in lower_content:
+            service_indicators.append("mobile")
+        if "web" in lower_content or "frontend" in lower_content or "ui" in lower_content:
+            service_indicators.append("web")
+        metadata["suggested_service_types"] = sorted(set(service_indicators))
+
+        # Complexity score heuristic
+        complexity_score = (
+            metadata["user_scenario_count"]
+            + len(functional_reqs)
+            + len(edge_cases)
+            + len(assumptions)
+        )
         metadata["complexity_score"] = complexity_score
         metadata["complexity_level"] = (
-            "high"
-            if complexity_score > 5
-            else "medium" if complexity_score > 2 else "low"
+            "high" if complexity_score >= 10 else "medium" if complexity_score >= 5 else "low"
         )
 
         logger.info(
-            "FRS 메타데이터 추출 완료 | 섹션=%d | 요구사항=%d",
-            len(sections),
+            "FRS 메타데이터 추출 완료 | 시나리오=%d | 요구 요약=%d",
+            metadata["user_scenario_count"],
             metadata["requirements_count"],
         )
         return {"success": True, "metadata": metadata}

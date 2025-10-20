@@ -2,20 +2,21 @@ from typing import Dict, Optional, Type
 
 from spec_agent.config import Config
 
-from .sequential import SequentialWorkflow
+from .workflow import SpecificationWorkflowRunner
 
 
-WorkflowType = Type[SequentialWorkflow]
+WorkflowType = Type[SpecificationWorkflowRunner]
 
 _WORKFLOW_REGISTRY: Dict[str, WorkflowType] = {
-    "sequential": SequentialWorkflow,
+    "default": SpecificationWorkflowRunner,
+    "pipeline": SpecificationWorkflowRunner,
 }
 
 
 def get_workflow(
-    name: str = "sequential",
+    name: str = "pipeline",
     config: Optional[Config] = None,
-) -> SequentialWorkflow:
+) -> SpecificationWorkflowRunner:
     """워크플로우를 이름으로 조회합니다."""
 
     try:
@@ -29,10 +30,7 @@ def get_workflow(
     return workflow_cls(config=config)
 
 
-SpecificationWorkflow = SequentialWorkflow
-
 __all__ = [
     "get_workflow",
-    "SequentialWorkflow",
-    "SpecificationWorkflow",
+    "SpecificationWorkflowRunner",
 ]

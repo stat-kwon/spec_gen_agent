@@ -68,61 +68,72 @@ def apply_template(
 
     try:
         template_structures = {
-            "requirements": [
-                # 한글/영어 모두 지원
-                "헤더/메타",
-                "Header/Meta",
-                "범위",
-                "Scope",
-                "기능 요구사항",
-                "Functional Requirements",
-                "오류 요구사항",
-                "Error Requirements",
-                "보안 & 개인정보",
-                "Security & Privacy",
-                "관측 가능성",
-                "Observability",
-                "수용 기준",
-                "Acceptance Criteria",
-            ],
-            "design": [
-                # 한글/영어 모두 지원
-                "아키텍처",
-                "Architecture",
-                "시퀀스 다이어그램",
-                "Sequence Diagram",
-                "데이터 모델",
-                "Data Model",
-                "API 계약",
-                "API Contract",
-                "보안 & 권한",
-                "Security & Permissions",
-                "성능 목표",
-                "Performance Goals",
-            ],
-            "tasks": [
-                # 한글/영어 모두 지원
-                "에픽",
-                "Epic",
-                "스토리",
-                "Story",
-                "태스크",
-                "Task",
-                "DoD",  # DoD는 공통
-            ],
-            "changes": [
-                # 한글/영어 모두 지원
-                "버전 이력",
-                "Version History",
-                "변경 요약",
-                "Change Summary",
+            "requirements": {
+                "mode": "single",
+                "required": [
+                    "Feature Specification",
+                    "User Scenarios & Testing",
+                    "Edge Cases",
+                    "Requirements",
+                    "Functional Requirements",
+                    "Success Criteria",
+                    "Measurable Outcomes",
+                ],
+                "optional": [
+                    "Key Entities",
+                ],
+            },
+            "design": {
+                "mode": "single",
+                "required": [
+                    "Implementation Plan",
+                    "Summary",
+                    "Technical Context",
+                    "Constitution Check",
+                    "Project Structure",
+                    "Complexity Tracking",
+                ],
+                "optional": [
+                    "Documentation (this feature)",
+                    "Source Code (repository root)",
+                ],
+            },
+            "tasks": {
+                "mode": "single",
+                "required": [
+                    "Tasks:",
+                    "Format: `[ID] [P?] [Story] Description`",
+                    "Path Conventions",
+                    "Phase 1: Setup (Shared Infrastructure)",
+                    "Phase 2: Foundational (Blocking Prerequisites)",
+                    "Dependencies & Execution Order",
+                    "Implementation Strategy",
+                    "Notes",
+                ],
+                "optional": [
+                    "Phase 3:",
+                    "Phase 4:",
+                    "Phase 5:",
+                    "Phase N: Polish & Cross-Cutting Concerns",
+                    "Parallel Example",
+                ],
+            },
+            "changes": {
+                "mode": "bilingual",
+                "required": [
+                    # 한글/영어 모두 지원
+                    "버전 이력",
+                    "Version History",
+                    "변경 요약",
+                    "Change Summary",
                 "영향/위험",
                 "Impact/Risk",
-                "롤백 계획",
-                "Rollback Plan",
-                "알려진 문제",
-                "Known Issues",
-            ],
+                    "롤백 계획",
+                    "Rollback Plan",
+                    "알려진 문제",
+                    "Known Issues",
+                ],
+            },
         }
 
         if template_type == "openapi":
@@ -182,18 +193,13 @@ def apply_template(
                 "compliance_score": 0.0,
             }
 
-        required_sections = template_structures[template_type]
-        missing_sections = []
+        structure_config = template_structures[template_type]
+        mode = structure_config.get("mode", "bilingual")
+        required_sections = structure_config.get("required", [])
+        optional_sections = structure_config.get("optional", [])
+        missing_sections: list[str] = []
 
         normalized_content = unicodedata.normalize("NFKC", content)
-
-        # 한글/영문 섹션을 쌍으로 구성
-        section_pairs = []
-        for i in range(0, len(required_sections), 2):
-            if i + 1 < len(required_sections):
-                section_pairs.append((required_sections[i], required_sections[i + 1]))
-            else:
-                section_pairs.append((required_sections[i], required_sections[i]))
 
         heading_matches = re.findall(
             r"^#{1,3}\s*(.+)$",
@@ -211,60 +217,95 @@ def apply_template(
                 }
             )
 
-        for korean_section, english_section in section_pairs:
-            korean_norm = _normalize_heading_text(korean_section)
-            english_norm = _normalize_heading_text(english_section)
-            korean_stripped = _strip_heading_identifier(korean_norm)
-            english_stripped = _strip_heading_identifier(english_norm)
+        def _section_present(name: str) -> bool:
+            norm = _normalize_heading_text(name)
+            stripped = _strip_heading_identifier(norm)
+            for info in heading_infos:
+                if (
+                    norm == info["normalized"]
+                    or norm in info["normalized"]
+                    or (stripped and stripped in info["stripped"])
+                ):
+                    return True
+            return False
 
-            bilingual_present = any(
-                (
-                    korean_norm in info["normalized"]
-                    and english_norm in info["normalized"]
+        if mode == "single":
+            for section in required_sections:
+                if not _section_present(section):
+                    missing_sections.append(section)
+        else:
+            # bilingual 처리 (기존 로직 유지)
+            section_pairs = []
+            for i in range(0, len(required_sections), 2):
+                if i + 1 < len(required_sections):
+                    section_pairs.append((required_sections[i], required_sections[i + 1]))
+                else:
+                    section_pairs.append((required_sections[i], required_sections[i]))
+
+            for korean_section, english_section in section_pairs:
+                korean_norm = _normalize_heading_text(korean_section)
+                english_norm = _normalize_heading_text(english_section)
+                korean_stripped = _strip_heading_identifier(korean_norm)
+                english_stripped = _strip_heading_identifier(english_norm)
+
+                bilingual_present = any(
+                    (
+                        korean_norm in info["normalized"]
+                        and english_norm in info["normalized"]
+                    )
+                    or (
+                        korean_stripped
+                        and english_stripped
+                        and korean_stripped in info["stripped"]
+                        and english_stripped in info["stripped"]
+                    )
+                    for info in heading_infos
                 )
-                or (
-                    korean_stripped
-                    and english_stripped
-                    and korean_stripped in info["stripped"]
-                    and english_stripped in info["stripped"]
+
+                korean_present = any(
+                    korean_norm == info["normalized"]
+                    or korean_norm in info["normalized"]
+                    or (korean_stripped and korean_stripped in info["stripped"])
+                    for info in heading_infos
                 )
-                for info in heading_infos
-            )
-
-            korean_present = any(
-                korean_norm == info["normalized"]
-                or korean_norm in info["normalized"]
-                or (korean_stripped and korean_stripped in info["stripped"])
-                for info in heading_infos
-            )
-            english_present = any(
-                english_norm == info["normalized"]
-                or english_norm in info["normalized"]
-                or (english_stripped and english_stripped in info["stripped"])
-                for info in heading_infos
-            )
-
-            if template_type == "changes":
-                requirement_met = bilingual_present or (
-                    korean_present and english_present
+                english_present = any(
+                    english_norm == info["normalized"]
+                    or english_norm in info["normalized"]
+                    or (english_stripped and english_stripped in info["stripped"])
+                    for info in heading_infos
                 )
-            else:
-                requirement_met = bilingual_present or korean_present or english_present
 
-            if not requirement_met:
-                missing_sections.append(f"{korean_section}/{english_section}")
+                if template_type == "changes":
+                    requirement_met = bilingual_present or (
+                        korean_present and english_present
+                    )
+                else:
+                    requirement_met = (
+                        bilingual_present or korean_present or english_present
+                    )
+
+                if not requirement_met:
+                    missing_sections.append(f"{korean_section}/{english_section}")
 
         found_sections = [info["original"] for info in heading_infos]
+
+        total_required = (
+            len(required_sections) // 2
+            if mode == "bilingual"
+            else len(required_sections)
+        )
+        total_required = max(total_required, 1)
+        missing_count = len(missing_sections)
 
         result = {
             "success": len(missing_sections) == 0,
             "content": content,
             "template_type": template_type,
             "required_sections": required_sections,
+            "optional_sections": optional_sections,
             "found_sections": found_sections,
             "missing_sections": missing_sections,
-            "compliance_score": (len(section_pairs) - len(missing_sections))
-            / len(section_pairs),
+            "compliance_score": (total_required - missing_count) / total_required,
         }
         logger.info(
             "템플릿 검증 완료 | 타입=%s | 누락=%d",

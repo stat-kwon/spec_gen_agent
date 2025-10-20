@@ -14,9 +14,10 @@ from ..tools import (
     validate_markdown_structure,
     read_spec_file,
     list_spec_files,
+    validate_openapi_spec
 )
 from ..config import Config
-from .factory import StrandsAgentFactory
+from ..agents import StrandsAgentFactory
 
 
 def create_requirements_agent(
@@ -43,6 +44,7 @@ def create_requirements_agent(
             extract_frs_metadata,
             apply_template,
             validate_markdown_structure,
+            read_spec_file,
         ],
         session_id=session_id,
     )
@@ -153,7 +155,7 @@ def create_openapi_agent(
         client_args={"api_key": config.openai_api_key},
     )
 
-    agent = Agent(model=openai_model, tools=[], system_prompt=system_prompt)
+    agent = Agent(model=openai_model, tools=[read_spec_file, validate_openapi_spec], system_prompt=system_prompt)
     logger.info("OpenAPI 에이전트 준비 완료")
     return agent
 

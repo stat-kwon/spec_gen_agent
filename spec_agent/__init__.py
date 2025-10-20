@@ -5,8 +5,8 @@ Strands Agent SDK 기반 명세서 생성 시스템.
 마크다운 파일로부터 서비스 문서를 생성하는 멀티 에이전트 시스템을 제공합니다.
 """
 
-from .workflow import SpecificationWorkflow
+from .workflows import SpecificationWorkflowRunner
 from .models import ServiceType
 
 __version__ = "2.0.0"
-__all__ = ["SpecificationWorkflow", "ServiceType"]
+__all__ = ["SpecificationWorkflowRunner", "ServiceType"]

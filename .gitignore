@@ -178,3 +178,5 @@ settings.local.py
 *.db
 *.sqlite
 *.sqlite3
+
+spec-kit-main

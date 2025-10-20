@@ -45,7 +45,7 @@ spec-agent generate specs/FRS-1.md --service-type api --no-git
 spec-agent validate specs/FRS-1/api
 ```
 
-CLI는 내부적으로 `spec_agent.workflows.get_workflow()`를 통해 `SequentialWorkflow`를 불러와 실행합니다.
+CLI는 내부적으로 `spec_agent.workflows.get_workflow()`를 통해 `SpecificationWorkflowRunner`를 불러와 실행합니다.
 
 ## 워크플로우 개요
 
@@ -58,7 +58,7 @@ CLI는 내부적으로 `spec_agent.workflows.get_workflow()`를 통해 `Sequenti
 ```
 spec_agent/
 ├── agents/            # 문서별 에이전트 팩토리
-├── workflows/         # SequentialWorkflow 및 품질/생성 헬퍼
+├── workflows/         # 파이프라인 러너 및 생성/품질 단계 모듈
 │   ├── context.py     # WorkflowContext 데이터 구조
 │   ├── generation.py  # SequentialDocumentGenerator
 │   ├── quality.py     # QualityImprovementManager

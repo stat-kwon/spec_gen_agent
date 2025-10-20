@@ -25,6 +25,7 @@ setup(
         "click==8.1.7",
         "python-dotenv==1.0.0",
         "jsonschema==4.20.0",
+        "PyYAML==6.0.1",
     ],
     entry_points={
         "console_scripts": [
